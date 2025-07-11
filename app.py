@@ -551,9 +551,9 @@ if page == "Upload CSV & Analyze":
         # Show CSV preview, then row selection and config
         if 'df' in locals():
             st.subheader("CSV Preview")
-            # Show preview with row numbers starting from 2 (but do not skip any data)
+            # Show preview with row numbers starting from 1 (spreadsheet style, matches selection)
             preview_df = df.head(10).copy()
-            preview_df.index = preview_df.index + 2
+            preview_df.index = preview_df.index + 1
             st.dataframe(preview_df, use_container_width=True)
 
             st.subheader("🎯 Select Rows to Process")
