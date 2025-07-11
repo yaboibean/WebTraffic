@@ -481,7 +481,7 @@ Here is the information about the visitor:
 Don't use any bold text or italic.
 
 Remember the name of the game is ultra professional, ultra polished, and ultra personalized, and very very short. Make sure you match a professional tone and make sure you are ultra professional, ultra polished, and ultra personalized.
-Very formal!
+Very formal! 3 sentences max!
 """
                 email_draft = draft_email_with_openai(email_prompt)
             
@@ -522,8 +522,8 @@ try:
     logo_img = Image.open(logo_path)
     st.sidebar.image(logo_img, use_column_width=True)
     logo_shown = True
-except Exception:
-    pass
+except Exception as e:
+    st.sidebar.error(f"Logo failed to load: {e}\nPath tried: {os.path.abspath(logo_path)}")
 st.sidebar.markdown("<h2 style='text-align: center;'>InstaLILY Lead Qualification</h2>", unsafe_allow_html=True)
 page = st.sidebar.selectbox("Choose Action", ["Upload CSV & Analyze", "View Past Results"])
 
@@ -705,7 +705,7 @@ if page == "Upload CSV & Analyze":
                                 with col2:
                                     if include_emails and row.get('EmailDraft'):
                                         st.write("**Draft Email:**")
-                                        st.text_area("", value=row.get('EmailDraft', ''), height=100, key=f"email_{row.name}")
+                                        st.text_area("", value=row.get('EmailDraft', ''), height=200, key=f"email_{row.name}")
                                 st.write("**Qualification Rationale:**")
                                 st.write(row.get('Rationale', 'No rationale available'))
                     # Download results
