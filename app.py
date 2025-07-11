@@ -569,8 +569,9 @@ if page == "Upload CSV & Analyze":
                         options=row_numbers,
                         default=row_numbers[:min(10, len(df))]
                     )
-                    # Subtract 1 to convert to DataFrame index
-                    df = df.iloc[[i - 1 for i in selected_rows]].reset_index(drop=True)
+                    # Use only valid selected rows (ignore any out of range)
+                    selected_indices = [i - 1 for i in selected_rows if 1 <= i <= len(df)]
+                    df = df.iloc[selected_indices].reset_index(drop=True)
 
             st.subheader("⚙️ Configuration")
             col1, col2 = st.columns(2)
