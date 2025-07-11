@@ -602,6 +602,11 @@ if page == "Upload CSV & Analyze":
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     results_container = st.empty()
+                    stop_placeholder = st.empty()
+                    stop_flag = {'stop': False}
+                    def stop_callback():
+                        stop_flag['stop'] = True
+                    stop_placeholder.button("🛑 Stop Processing", on_click=stop_callback)
                     # Use the same placeholder for dynamic time estimate
                     qual_flags = []
                     notes_list = []
@@ -611,6 +616,9 @@ if page == "Upload CSV & Analyze":
                     start_time = time.time()
                     row_times = []
                     for idx, row in enumerate(df.itertuples(index=False)):
+                        if stop_flag['stop']:
+                            status_text.warning("Processing stopped by user.")
+                            break
                         row_start = time.time()
                         # Convert row to dict for compatibility
                         if hasattr(row, '_asdict'):
