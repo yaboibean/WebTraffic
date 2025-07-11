@@ -13,6 +13,7 @@ import threading
 from contextlib import contextmanager
 import io
 from io import StringIO
+from openai import OpenAI
 
 ###########################
 # Print Capture Utilities #
@@ -460,11 +461,8 @@ if page == "Upload CSV & Analyze":
         # Save print log to session state
         st.session_state['print_log_buffer'].write(print_buffer.getvalue())
 
-        # Always show preview, row selection, and config
+        # Show only row selection and config (no preview)
         if 'df' in locals():
-            st.subheader("📋 Data Preview")
-            st.dataframe(df.head(10))
-
             st.subheader("🎯 Select Rows to Process")
             col1, col2 = st.columns(2)
             with col1:
