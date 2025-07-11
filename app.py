@@ -1,646 +1,1454 @@
-import streamlit as st
-import pandas as pd
-import requests
-import time
+"""
+B2B Sales Intelligence Platform - Flask Backend
+Integrates AI Link Scraper with B2B Vault functionality
+"""
+
 import os
-import tempfile
-import sqlite3
-from datetime import datetime
-import re
+import sys
 import json
-from io import StringIO
+import csv
+from datetime import datetime
+from flask import Flask, render_template, jsonify, request, send_file
+from flask_cors import CORS
+import sqlite3
+import pandas as pd
+from pathlib import Path
+import threading
+import time
+import logging
+import subprocess
 
-# Page config
-st.set_page_config(
-    page_title="InstaLILY Lead Qualification Tool",
-    page_icon="🚀",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Add the src directory to path for imports
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'b2bvault-repo'))
 
-# Constants
-PERPLEXITY_API_KEY = st.secrets.get("PERPLEXITY_API_KEY", "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")
-PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", "")
+# Import B2B Vault scraper
+try:
+    from b2b_vault_integration import B2BVaultIntegration
+    B2B_VAULT_AVAILABLE = True
+except ImportError as e:
+    print(f"B2B Vault integration not available: {e}")
+    B2B_VAULT_AVAILABLE = False
 
-# Database setup
-def init_database():
-    """Initialize SQLite database for storing results"""
-    conn = sqlite3.connect('qualification_results.db')
-    cursor = conn.cursor()
-    
-    # Create tables
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS analyses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            filename TEXT,
-            total_rows INTEGER,
-            qualified_count INTEGER,
-            qualification_rate REAL
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS qualified_visitors (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            analysis_id INTEGER,
-            first_name TEXT,
-            last_name TEXT,
-            title TEXT,
-            company_name TEXT,
-            industry TEXT,
-            email TEXT,
-            website TEXT,
-            qualification_score REAL,
-            notes TEXT,
-            email_draft TEXT,
-            FOREIGN KEY (analysis_id) REFERENCES analyses (id)
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
+app = Flask(__name__)
+CORS(app)
 
-def save_analysis_results(filename, df):
-    """Save analysis results to database"""
-    conn = sqlite3.connect('qualification_results.db')
-    cursor = conn.cursor()
+# Configuration
+SCRAPED_LINKS_DIR = os.path.join(os.path.dirname(__file__), '..', 'scraped_links')
+DATABASE_PATH = os.path.join(os.path.dirname(__file__), 'sales_intelligence.db')
+B2B_VAULT_DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'b2bvault-repo', 'scraped_data')
+
+# Global variables for B2B Vault scraping status
+b2b_scraping_status = {
+    'is_running': False,
+    'progress': 0,
+    'current_step': '',
+    'results': None,
+    'error': None,
+    'log_messages': []
+}
+
+# Available B2B Vault tags
+B2B_TAGS = [
+    "All", "Content Marketing", "Demand Generation", "ABM & GTM", 
+    "Paid Marketing", "Marketing Ops", "Event Marketing", "AI", 
+    "Product Marketing", "Sales", "General", "Affiliate & Partnerships", 
+    "Copy & Positioning"
+]
+
+class SalesIntelligenceDB:
+    """Database manager for the sales intelligence platform"""
     
-    # Insert analysis record
-    qualified_count = df['Qualified'].sum()
-    total_rows = len(df)
-    qualification_rate = qualified_count / total_rows if total_rows > 0 else 0
+    def __init__(self, db_path=DATABASE_PATH):
+        self.db_path = db_path
+        self.init_database()
     
-    cursor.execute('''
-        INSERT INTO analyses (timestamp, filename, total_rows, qualified_count, qualification_rate)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (datetime.now().isoformat(), filename, total_rows, qualified_count, qualification_rate))
-    
-    analysis_id = cursor.lastrowid
-    
-    # Insert qualified visitors
-    qualified_df = df[df['Qualified'] == True]
-    for _, row in qualified_df.iterrows():
+    def init_database(self):
+        """Initialize the database with required tables"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # AI Links table
         cursor.execute('''
-            INSERT INTO qualified_visitors 
-            (analysis_id, first_name, last_name, title, company_name, industry, email, website, qualification_score, notes, email_draft)
+            CREATE TABLE IF NOT EXISTS ai_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                url TEXT UNIQUE NOT NULL,
+                domain TEXT,
+                content TEXT,
+                content_type TEXT,
+                category TEXT,
+                word_count INTEGER,
+                slack_user TEXT,
+                date_scraped TEXT,
+                date_shared TEXT,
+                brief_description TEXT,
+                status TEXT DEFAULT 'active'
+            )
+        ''')
+        
+        # Add brief_description column if it doesn't exist
+        try:
+            cursor.execute("ALTER TABLE ai_links ADD COLUMN brief_description TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        
+        # B2B Vault articles table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS b2b_articles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                url TEXT UNIQUE NOT NULL,
+                publisher TEXT,
+                category TEXT,
+                content TEXT,
+                summary TEXT,
+                word_count INTEGER,
+                date_published TEXT,
+                date_scraped TEXT,
+                status TEXT DEFAULT 'active'
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+    
+    def get_ai_links(self, limit=100):
+        """Get AI links from database"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM ai_links 
+            WHERE status = 'active' 
+            ORDER BY date_scraped DESC 
+            LIMIT ?
+        ''', (limit,))
+        
+        columns = [desc[0] for desc in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        conn.close()
+        return results
+    
+    def add_ai_link(self, link_data):
+        """Add an AI link to the database"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO ai_links 
+            (title, url, domain, content, content_type, category, word_count, slack_user, date_scraped, date_shared, brief_description)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            analysis_id,
-            row.get('FirstName', ''),
-            row.get('LastName', ''),
-            row.get('Title', ''),
-            row.get('CompanyName', ''),
-            row.get('Industry', ''),
-            row.get('Email', ''),
-            row.get('Website', ''),
-            float(row.get('Score', 0)) if row.get('Score', '').replace('.', '').isdigit() else 0,
-            row.get('Notes', ''),
-            row.get('EmailDraft', '')
+            link_data.get('title', ''),
+            link_data.get('url', ''),
+            link_data.get('domain', ''),
+            link_data.get('content', ''),
+            link_data.get('content_type', ''),
+            link_data.get('category', ''),
+            link_data.get('word_count', 0),
+            link_data.get('slack_user', ''),
+            link_data.get('date_scraped', datetime.now().isoformat()),
+            link_data.get('date_shared', ''),
+            link_data.get('brief_description', '')
         ))
-    
-    conn.commit()
-    conn.close()
-    return analysis_id
-
-def get_past_analyses():
-    """Retrieve past analyses from database"""
-    conn = sqlite3.connect('qualification_results.db')
-    
-    query = '''
-        SELECT a.*, COUNT(qv.id) as qualified_visitors_count
-        FROM analyses a
-        LEFT JOIN qualified_visitors qv ON a.id = qv.analysis_id
-        GROUP BY a.id
-        ORDER BY a.timestamp DESC
-    '''
-    
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-    return df
-
-def get_qualified_visitors(analysis_id):
-    """Get qualified visitors for a specific analysis"""
-    conn = sqlite3.connect('qualification_results.db')
-    
-    query = '''
-        SELECT * FROM qualified_visitors 
-        WHERE analysis_id = ?
-        ORDER BY qualification_score DESC
-    '''
-    
-    df = pd.read_sql_query(query, conn, params=(analysis_id,))
-    conn.close()
-    return df
-
-# Qualification functions (adapted from original script)
-def is_valid_data(value):
-    """Check if a value is valid (not nan, N/A, or empty)"""
-    if pd.isna(value):
-        return False
-    str_val = str(value).strip().lower()
-    return str_val not in ['nan', 'n/a', '', 'none']
-
-def extract_rationale(text):
-    """Extract comprehensive rationale from Perplexity response"""
-    lines = text.split('\n')
-    key_points = []
-    
-    for line in lines[1:]:  # Skip the Yes/No line
-        line = line.strip()
-        if line and len(line) > 15 and not line.startswith('Score:') and '---' not in line:
-            line = line.lstrip('•-* ').strip()
-            if any(keyword in line.lower() for keyword in ['company', 'role', 'industry', 'experience', 'decision', 'revenue', 'size', 'potential', 'fit', 'budget', 'authority', 'need', 'timeline', 'qualified', 'unqualified', 'because', 'however', 'although', 'likely', 'strong', 'weak']):
-                key_points.append(line)
-            if len(key_points) >= 4:
-                break
-    
-    if key_points:
-        rationale = " | ".join(key_points)
-        if len(rationale) > 400:
-            rationale = rationale[:397] + "..."
-        return rationale
-    else:
-        text_clean = text.replace('\n', ' ').strip()
-        if len(text_clean) > 100:
-            return text_clean[:397] + "..." if len(text_clean) > 400 else text_clean
-        return "Analysis completed - see detailed response above"
-
-def draft_email_with_openai(email_prompt):
-    """Draft email using OpenAI API"""
-    try:
-        if not OPENAI_API_KEY:
-            return ""
         
-        from openai import OpenAI
-        client = OpenAI(api_key=OPENAI_API_KEY)
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": email_prompt}],
-            max_tokens=200,
-            temperature=0.5,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        st.error(f"OpenAI API error: {e}")
-        return ""
-
-def qualify_visitor(row, progress_bar, current_idx, total_count):
-    """Qualify a single visitor using Perplexity AI"""
+        conn.commit()
+        conn.close()
     
-    # Build visitor details with only valid data
-    visitor_details = []
-    
-    if is_valid_data(row.get('Title')):
-        visitor_details.append(f"- Title: {row.get('Title')}")
-    if is_valid_data(row.get('FirstName')):
-        visitor_details.append(f"- First Name: {row.get('FirstName')}")
-    if is_valid_data(row.get('LastName')):
-        visitor_details.append(f"- Last Name: {row.get('LastName')}")
-    if is_valid_data(row.get('Email')):
-        visitor_details.append(f"- Email: {row.get('Email')}")
-    if is_valid_data(row.get('CompanyName')):
-        visitor_details.append(f"- Company: {row.get('CompanyName')}")
-    if is_valid_data(row.get('Industry')):
-        visitor_details.append(f"- Industry: {row.get('Industry')}")
-    if is_valid_data(row.get('Website')):
-        visitor_details.append(f"- Website: {row.get('Website')}")
-    if is_valid_data(row.get('Country')):
-        visitor_details.append(f"- Country: {row.get('Country')}")
-    
-    visitor_details_text = "\n".join(visitor_details) if visitor_details else "Limited visitor information available"
-    
-    company = row.get('CompanyName', 'N/A')
-    industry = row.get('Industry', 'N/A')
-    website = row.get('Website', 'N/A')
-    
-    qualification_prompt = f"""
-As you research, you will visit the following websites and sources:
-- Company website: {website if is_valid_data(website) else 'Not available'}
-- Google searches for company news and background
-- Professional profile verification
-- Industry analysis sources
-
-CURRENT RESEARCH TARGET:
-{company}{f' in {industry}' if is_valid_data(industry) else ''}
-
-Evaluate the following website visitor to determine if InstaLILY should reach out to them as a potential client.
-
-Firstly some context: this is a website visitor that has been identified as a potential lead for InstaLILY, a B2B SaaS company that provides AI-driven solutions for various industries. We are trying to figure out if they are a good fit for InstaLILY and if we should reach out to them.
-
-Be aware of the intent of the visitor, and put it into 3 categories: Investor, student/looking for a job, or potential customer. If they are an investor or student, they are not qualified. If they are a potential customer, we will evaluate them based on the following criteria.
-
-Visitor Details from RB2B:
-{visitor_details_text}
-
-Just a few of the industries that InstaLILY likes to work with are: Healthcare Distribution, Industrial/Construction/Distribution, Automotive (OEM/Fleet/Parts), Food & Beverage Distribution, and PE Operating roles. These are ideals, not requirements. These are just the top industries we are targeting, but we are more than open to other industries if the visitor meets the other criteria. Don't place too much negative weight on the industry, this means that if the industry does not line up, don't dock too many points, but if it does line up, give a lot of points. All of these are very broad, and can be interpreted in many ways, so use your best judgement to determine if the visitor is a good fit for InstaLILY.
-
-In the case of ambiguous or missing data, search online to fill in the gaps. Use the companies website, and any other sources you can find to get a better understanding of the company and the visitor.
-
-InstaLILY's business model is to provide AI-driven solutions that help businesses in these industries (and others) optimize their operations, improve efficiency, and drive growth. We are looking for visitors who have an interest in leveraging AI technology to enhance their business processes.
-
-Also keep in mind that some of the information given could be wrong, so you need to do your own research to verify it
-
-If you find that for example the industry isn't perfect, but the title is right, you will need to restart the evaluation based on the new information you found.
-
-Remember, the person and company do not have to currently be working with AI.
-
-While you are evaluating the visitor/company, do a very very deep search for any news on both the company and the visitor. Look for any recent news, press releases, or social media activity that might indicate their current business focus, challenges, or interests. This will help you better understand their potential fit with InstaLILY. Feel free to use any sources you can find, including Google, news articles, etc. and any other sources you can find. If you cannot find any information, do not qualify them. Reddit is also a great source for finding information about the company and the visitor, so be sure to check there as well.
-
-When you are researching you must search the following: 
-- [company name] + [industry] + "news" to find any recent news about the company
-- what does [company name] do? to find the company's website and any other information you can find.
-- [first name] + [last name] + [company name] to find the visitor's professional profile.
-- [company name] + [industry] to find the company's website and any other information you can find.
-
-A visitor is considered QUALIFIED if:
-1. They are in or adjacent to ICP industries (if other categories are met, even non-ICP may qualify).
-2. They hold a somewhat senior/strategic title. Lower-level roles are OK only if the other categories are met 
-3. They show strong buying intent (multiple sessions, career page visits). This is the least important of the three.
-
-Conduct very very deep analysis to judge company/role fit. Take your time to evaluate the company using all available sources, and do not rush this process. 
-
-If a company does something remotely similar to what InstaLILY does, they are a competitor, and they are not qualified, and this immediately disqualifies them. And also keep in mind that they might not be targeting the same industries as InstaLILY, but if they have a similar mission of modernizing other companies (B2B), they are a competitor.
-
-Return only:
-- Yes or No
-- Many short bullet points with information based on industry, title, seniority, and any override logic
-- A short summary of the visitor's profile
-- A short summary of the company
-- A score 1–10 of how qualified they are: formatted like "Score: 5"
-- A small section on their past experiences (based on your research)
-
-The visitor doesn't need to currently be making an effort to adopt AI, but rather have a business that could benefit from AI.
-
-While you are completing this, something that you should be thinking as you evaluate each company, is 'would this company benefit from InstaLILY's services', because they don't already have to be adopting AI services right now, in fact, the more outdated the better! Keep in mind, InstaLILY helps companies modernize their operations, and improve their efficiency.
-
-Another thing you NEED to watch out for is whether the visitor is a competitor, trying to scope out InstaLILY. In order to know if they are a competitor, you need to conduct a very very deep search about the company online and use as many sources you can find. This also requires you to do some research, but it is very important. If they are a competitor, they are not qualified, and you should say so in your response. This means you also have to have a deep understanding of InstaLILY's business model, and products. With this said though, they still can be doing some stuff with AI already.
-
-Be sure that you understand both InstaLILY's business model and ICPs, as well as the visitor's profile. If you are not sure, do not qualify them. Make sure that they would be a good fit for InstaLILY, and that they are not a competitor. If you are not sure, do not qualify them.
-
-Keep in mind, the more people we can qualify, the better, but if they are not a good fit, we should not waste time on them. Be very thorough in your analysis.
-
-You should aim to qualify between 25 and 35% of the visitors.
-
-Do not include citations!
-
-Make sure you start with either a "Yes" or a "No" indicating whether or not the person and company is qualified. If they are qualified, say "Yes" as the first words, and if they are not, say "No"
-
-Finally, If you select someone, you should be 100% confident that they could work well with InstaLILY and align well with what we do. The more people that we can qualify the better.
-
-Don't use any bold text or italic.
-
-Take as much time as you need to evaluate the visitor and company, and be very thorough in your analysis. Find every single known piece of information about them that you can, whether it is from their website, social media, linkedin, news articles, or any other sources. The more information you can find, the better your analysis will be.
-
-Remember, the industry is a very important factor, but it is very loose.The industry is very broad, and can be interpreted in many ways, so use your best judgement to determine if the visitor is a good fit for InstaLILY.
-
-Also keep in mind that for a little company, they might not be able to afford InstaLILY. This means that larger companies are more likely to be qualified, but smaller companies can also be qualified if they meet the other criteria.
-
-Even if a company is big and might have access to AI, they might still be a good fit for InstaLILY. The name of the game is that we wont know unless we talk to them, so the more we can qualify, the better. But with that said, we dont want to waste time on people that are not a good fit, so be very thorough in your analysis.
-
-Try and be extra lenient with big companies, as they are more likely to be qualified.
-"""
-    
-    headers = {
-        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "sonar-pro",
-        "messages": [{"role": "user", "content": qualification_prompt}]
-    }
-    
-    try:
-        # Update progress
-        progress_bar.progress((current_idx + 1) / total_count)
+    def get_b2b_articles(self, limit=100, category=None):
+        """Get B2B Vault articles from database"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
         
-        response = requests.post(PERPLEXITY_API_URL, headers=headers, json=payload)
-        if response.status_code == 200:
-            reply = response.json()['choices'][0]['message']['content'].strip()
-            is_qualified = reply.lower().startswith("yes")
-            
-            # Extract score
-            score_match = re.search(r'score\s*[:\-]?\s*([0-9]+(?:\.[0-9]+)?)', reply, re.IGNORECASE)
-            score = score_match.group(1) if score_match else ""
-            
-            # Draft email if qualified
-            email_draft = ""
-            if is_qualified and OPENAI_API_KEY:
-                name = row.get('FirstName', '') if is_valid_data(row.get('FirstName')) else None
-                title = row.get('Title', '') if is_valid_data(row.get('Title')) else None
-                company = row.get('CompanyName', '') if is_valid_data(row.get('CompanyName')) else None
-                industry = row.get('Industry', '') if is_valid_data(row.get('Industry')) else None
-                website = row.get('Website', '') if is_valid_data(row.get('Website')) else None
-                email_addr = row.get('Email', '') if is_valid_data(row.get('Email')) else None
-
-                visitor_info_lines = []
-                if name: visitor_info_lines.append(f"- Name: {name}")
-                if title: visitor_info_lines.append(f"- Title: {title}")
-                if company: visitor_info_lines.append(f"- Company: {company}")
-                if industry: visitor_info_lines.append(f"- Industry: {industry}")
-                if website: visitor_info_lines.append(f"- Website: {website}")
-                if email_addr: visitor_info_lines.append(f"- Email: {email_addr}")
-                visitor_info = "\n".join(visitor_info_lines)
-
-                email_prompt = f"""
-Write a short, very formal and professional, personalized email from Sumo (co-founder of InstaLILY) to the following website visitor, based on their role and company. 
-No buzzwords. Mention curiosity about what brought them to the site, and a soft offer to help. 
-Mention how InstaLILY helps companies eliminate manual work and improve operations with AI.
-Talk a little bit about why we could help them (specific to their company and what they do--this will require research on both InstaLILY and the company we are emailing.
-The name of the game is to get them to respond, so keep it very very professional and short!! Do Not include citations!
-2 sentences max!
-Also be sure to keep in mind their role at the company and how that might change the email (a board member would get a different email than a director of operations, for example).
-Don't make it sound like a sales email.
-It is most important that the email is not salesy at all, but the first line is ultra personalized to catch their attention.
-
-Here is the information about the visitor:
-{visitor_info}
-
-Don't use any bold text or italic.
-
-Remember the name of the game is ultra professional, ultra polished, and ultra personalized, and very very short. Make sure you match a professional tone and make sure you are ultra professional, ultra polished, and ultra personalized.
-Very formal!
-"""
-                email_draft = draft_email_with_openai(email_prompt)
-            
-            return {
-                'qualified': is_qualified,
-                'notes': reply,
-                'score': score,
-                'email_draft': email_draft,
-                'rationale': extract_rationale(reply)
-            }
+        query = '''
+            SELECT * FROM b2b_articles 
+            WHERE status = 'active'
+        '''
+        params = []
+        
+        if category and category != 'All':
+            query += ' AND category = ?'
+            params.append(category)
+        
+        query += ' ORDER BY date_scraped DESC LIMIT ?'
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        
+        columns = [desc[0] for desc in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        conn.close()
+        return results
+    
+    def add_b2b_article(self, article_data):
+        """Add a B2B Vault article to the database"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO b2b_articles 
+            (title, url, publisher, category, content, summary, word_count, date_scraped)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            article_data.get('title', ''),
+            article_data.get('url', ''),
+            article_data.get('publisher', ''),
+            article_data.get('category', ''),
+            article_data.get('content', ''),
+            article_data.get('summary', ''),
+            article_data.get('word_count', 0),
+            article_data.get('date_scraped', datetime.now().isoformat())
+        ))
+        
+        conn.commit()
+        conn.close()
+    
+    def search_articles(self, query, article_type='all'):
+        """Search articles by query"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        search_query = f"%{query}%"
+        
+        if article_type == 'ai_links':
+            cursor.execute('''
+                SELECT * FROM ai_links 
+                WHERE status = 'active' 
+                AND (title LIKE ? OR content LIKE ? OR category LIKE ?)
+                ORDER BY date_scraped DESC
+            ''', (search_query, search_query, search_query))
+        elif article_type == 'b2b_vault':
+            cursor.execute('''
+                SELECT * FROM b2b_articles 
+                WHERE status = 'active' 
+                AND (title LIKE ? OR content LIKE ? OR summary LIKE ? OR category LIKE ?)
+                ORDER BY date_scraped DESC
+            ''', (search_query, search_query, search_query, search_query))
         else:
-            return {
-                'qualified': False,
-                'notes': f"API error: {response.status_code}",
-                'score': "",
-                'email_draft': "",
-                'rationale': "API Error"
-            }
-    except Exception as e:
-        return {
-            'qualified': False,
-            'notes': f"Exception: {str(e)}",
-            'score': "",
-            'email_draft': "",
-            'rationale': "Processing Error"
-        }
+            # Search both tables
+            cursor.execute('''
+                SELECT 'ai_links' as source, * FROM ai_links 
+                WHERE status = 'active' 
+                AND (title LIKE ? OR content LIKE ? OR category LIKE ?)
+                UNION ALL
+                SELECT 'b2b_vault' as source, id, title, url, publisher as domain, 
+                       content, category as content_type, category, word_count, 
+                       '', date_published as date_shared, date_scraped, status
+                FROM b2b_articles 
+                WHERE status = 'active' 
+                AND (title LIKE ? OR content LIKE ? OR summary LIKE ? OR category LIKE ?)
+                ORDER BY date_scraped DESC
+            ''', (search_query, search_query, search_query, 
+                  search_query, search_query, search_query, search_query))
+        
+        columns = [desc[0] for desc in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        conn.close()
+        return results
 
-# Initialize database
-init_database()
-
-# Sidebar navigation
-st.sidebar.title("🚀 InstaLILY Lead Qualification")
-page = st.sidebar.selectbox("Choose Action", ["Upload CSV & Analyze", "View Past Results"])
-
-if page == "Upload CSV & Analyze":
-    st.title("📊 Lead Qualification Analysis")
-    st.markdown("Upload a CSV file with visitor data to qualify leads using AI-powered analysis.")
+class B2BVaultManager:
+    """Manager for B2B Vault scraping operations"""
     
-    # File upload
-    uploaded_file = st.file_uploader(
-        "Choose a CSV file", 
-        type=['csv'],
-        help="Upload a CSV file containing visitor data with columns like FirstName, LastName, Title, CompanyName, Industry, etc."
-    )
+    def __init__(self, db_manager):
+        self.db = db_manager
+        self.logger = logging.getLogger(__name__)
     
-    if uploaded_file is not None:
+    def start_scraping(self, tags=['All'], max_articles_per_tag=50):
+        """Start B2B Vault scraping in background thread"""
+        if b2b_scraping_status['is_running']:
+            return False, "Scraping is already running"
+        
+        # Check if we're in a serverless environment
+        is_serverless = os.environ.get('VERCEL') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RENDER')
+        
+        if is_serverless:
+            return False, "Live scraping is not available in serverless deployments. Demo articles are automatically loaded on startup."
+        
+        def scraping_thread():
+            try:
+                b2b_scraping_status['is_running'] = True
+                b2b_scraping_status['progress'] = 0
+                b2b_scraping_status['current_step'] = 'Initializing B2B Vault scraper...'
+                b2b_scraping_status['error'] = None
+                b2b_scraping_status['log_messages'] = []
+                
+                # Import and initialize B2B Vault scraper
+                if not B2B_VAULT_AVAILABLE:
+                    raise Exception("B2B Vault scraper not available")
+                
+                b2b_scraping_status['current_step'] = 'Starting scraper...'
+                b2b_scraping_status['progress'] = 10
+                
+                # Initialize the B2B Vault integration
+                integration = B2BVaultIntegration()
+                
+                b2b_scraping_status['current_step'] = 'Scraping articles...'
+                b2b_scraping_status['progress'] = 30
+                
+                # Scrape real articles
+                all_articles = scrape_b2b_vault()
+                
+                b2b_scraping_status['current_step'] = 'Processing articles...'
+                b2b_scraping_status['progress'] = 75
+                
+                b2b_scraping_status['current_step'] = 'Saving to database...'
+                b2b_scraping_status['progress'] = 90
+                
+                # Save to database
+                for article in all_articles:
+                    self.db.add_b2b_article(article)
+                
+                b2b_scraping_status['current_step'] = 'Complete!'
+                b2b_scraping_status['progress'] = 100
+                b2b_scraping_status['results'] = {
+                    'total_articles': len(all_articles),
+                    'tags_scraped': tags,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+            except Exception as e:
+                self.logger.error(f"B2B Vault scraping error: {e}")
+                b2b_scraping_status['error'] = str(e)
+                b2b_scraping_status['current_step'] = 'Error occurred'
+            finally:
+                b2b_scraping_status['is_running'] = False
+        
+        thread = threading.Thread(target=scraping_thread)
+        thread.daemon = True
+        thread.start()
+        
+        return True, "Scraping started successfully"
+    
+    def get_scraping_status(self):
+        """Get current scraping status"""
+        return b2b_scraping_status.copy()
+    
+    def load_cached_data(self):
+        """Load cached B2B Vault data from files"""
         try:
-            # Read CSV
-            df = pd.read_csv(uploaded_file)
-            st.success(f"✅ Loaded {len(df)} rows from {uploaded_file.name}")
+            # Look for cached data in the B2B Vault data directory
+            data_files = []
+            if os.path.exists(B2B_VAULT_DATA_DIR):
+                for file in os.listdir(B2B_VAULT_DATA_DIR):
+                    if file.endswith('.json'):
+                        data_files.append(os.path.join(B2B_VAULT_DATA_DIR, file))
             
-            # Display preview
-            st.subheader("📋 Data Preview")
-            st.dataframe(df.head(10))
+            if not data_files:
+                return []
             
-            # Row selection
-            st.subheader("🎯 Select Rows to Process")
-            col1, col2 = st.columns(2)
+            # Load the most recent data file
+            latest_file = max(data_files, key=os.path.getctime)
             
-            with col1:
-                process_all = st.checkbox("Process all rows", value=True)
+            with open(latest_file, 'r', encoding='utf-8') as f:
+                articles = json.load(f)
             
-            if not process_all:
-                with col2:
-                    selected_rows = st.multiselect(
-                        "Select specific rows (by index)",
-                        options=list(range(len(df))),
-                        default=list(range(min(10, len(df))))
-                    )
-                    df = df.iloc[selected_rows].reset_index(drop=True)
+            # Save to database
+            for article in articles:
+                self.db.add_b2b_article(article)
             
-            # Configuration
-            st.subheader("⚙️ Configuration")
-            col1, col2 = st.columns(2)
+            return articles
             
-            with col1:
-                include_emails = st.checkbox("Generate email drafts for qualified leads", value=True)
-            
-            with col2:
-                batch_size = st.selectbox("Batch size (for large datasets)", [1, 5, 10, 25, 50], index=2)
-            
-            # Time estimate
-            estimated_time = len(df) * 45  # seconds
-            st.info(f"⏱️ Estimated processing time: {estimated_time // 60}m {estimated_time % 60}s for {len(df)} rows")
-            
-            # Process button
-            if st.button("🚀 Start Analysis", type="primary"):
-                if len(df) == 0:
-                    st.error("No data to process!")
-                else:
-                    # Processing
-                    st.subheader("🔄 Processing...")
-                    
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    results_container = st.empty()
-                    
-                    # Process each row
-                    qual_flags = []
-                    notes_list = []
-                    scores_list = []
-                    email_drafts = []
-                    rationales = []
-                    
-                    start_time = time.time()
-                    
-                    for idx, row in df.iterrows():
-                        status_text.text(f"Processing {idx + 1}/{len(df)}: {row.get('FirstName', 'N/A')} {row.get('LastName', 'N/A')} at {row.get('CompanyName', 'N/A')}")
-                        
-                        result = qualify_visitor(row, progress_bar, idx, len(df))
-                        
-                        qual_flags.append(result['qualified'])
-                        notes_list.append(result['notes'])
-                        scores_list.append(result['score'])
-                        email_drafts.append(result['email_draft'] if include_emails else "")
-                        rationales.append(result['rationale'])
-                        
-                        # Show live results
-                        qualified_count = sum(qual_flags)
-                        with results_container.container():
-                            col1, col2, col3 = st.columns(3)
-                            col1.metric("Processed", f"{idx + 1}/{len(df)}")
-                            col2.metric("Qualified", qualified_count)
-                            col3.metric("Rate", f"{qualified_count/(idx+1)*100:.1f}%")
-                            
-                            if result['qualified']:
-                                st.success(f"✅ {row.get('FirstName', '')} {row.get('LastName', '')} - QUALIFIED")
-                                st.write(f"💭 {result['rationale']}")
-                            else:
-                                st.warning(f"❌ {row.get('FirstName', '')} {row.get('LastName', '')} - Not Qualified")
-                    
-                    # Add results to dataframe
-                    df['Qualified'] = qual_flags
-                    df['Notes'] = notes_list
-                    df['Score'] = scores_list
-                    if include_emails:
-                        df['EmailDraft'] = email_drafts
-                    df['Rationale'] = rationales
-                    
-                    # Calculate final stats
-                    qualified_count = df['Qualified'].sum()
-                    total_time = time.time() - start_time
-                    
-                    # Save to database
-                    analysis_id = save_analysis_results(uploaded_file.name, df)
-                    
-                    # Display final results
-                    st.subheader("🎉 Analysis Complete!")
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("Total Processed", len(df))
-                    col2.metric("Qualified", qualified_count)
-                    col3.metric("Qualification Rate", f"{qualified_count/len(df)*100:.1f}%")
-                    col4.metric("Processing Time", f"{total_time/60:.1f}m")
-                    
-                    # Display qualified leads
-                    if qualified_count > 0:
-                        st.subheader("✅ Qualified Leads")
-                        qualified_df = df[df['Qualified'] == True]
-                        
-                        for _, row in qualified_df.iterrows():
-                            with st.expander(f"🎯 {row.get('FirstName', '')} {row.get('LastName', '')} - {row.get('CompanyName', '')}"):
-                                col1, col2 = st.columns(2)
-                                
-                                with col1:
-                                    st.write("**Contact Info:**")
-                                    st.write(f"Name: {row.get('FirstName', '')} {row.get('LastName', '')}")
-                                    st.write(f"Title: {row.get('Title', 'N/A')}")
-                                    st.write(f"Company: {row.get('CompanyName', 'N/A')}")
-                                    st.write(f"Industry: {row.get('Industry', 'N/A')}")
-                                    st.write(f"Email: {row.get('Email', 'N/A')}")
-                                    st.write(f"Score: {row.get('Score', 'N/A')}/10")
-                                
-                                with col2:
-                                    if include_emails and row.get('EmailDraft'):
-                                        st.write("**Draft Email:**")
-                                        st.text_area("", value=row.get('EmailDraft', ''), height=100, key=f"email_{row.name}")
-                                
-                                st.write("**Qualification Rationale:**")
-                                st.write(row.get('Rationale', 'No rationale available'))
-                    
-                    # Download results
-                    csv_buffer = StringIO()
-                    df.to_csv(csv_buffer, index=False)
-                    
-                    st.download_button(
-                        label="📥 Download Results CSV",
-                        data=csv_buffer.getvalue(),
-                        file_name=f"qualified_leads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
-                    
         except Exception as e:
-            st.error(f"Error processing file: {str(e)}")
+            self.logger.error(f"Error loading cached B2B Vault data: {e}")
+            return []
 
-elif page == "View Past Results":
-    st.title("📈 Past Analysis Results")
+def generate_expanded_summary(content, title, category):
+    """Generate a more detailed 4-5 sentence summary from article content"""
+    # Extract key sentences from the content
+    sentences = content.split('. ')
     
-    # Get past analyses
-    analyses_df = get_past_analyses()
-    
-    if len(analyses_df) == 0:
-        st.info("No past analyses found. Upload a CSV to get started!")
+    # Create a 4-5 sentence summary based on the content
+    if len(sentences) >= 4:
+        # Use the first few sentences and add category-specific insights
+        summary_parts = []
+        
+        # Add the main point
+        summary_parts.append(sentences[0].strip())
+        
+        # Add supporting details
+        if len(sentences) > 1:
+            summary_parts.append(sentences[1].strip())
+        
+        # Add category-specific insights
+        if category == "AI":
+            summary_parts.append("This represents a significant shift in how AI technology is being adopted across B2B marketing and sales operations.")
+        elif category == "Sales":
+            summary_parts.append("Sales teams implementing these strategies report measurable improvements in conversion rates and deal velocity.")
+        elif category == "ABM & GTM":
+            summary_parts.append("Account-based marketing approaches like this require alignment between sales and marketing teams for maximum effectiveness.")
+        elif category == "Content Marketing":
+            summary_parts.append("Content marketing strategies must evolve to meet changing buyer expectations and consumption patterns.")
+        else:
+            summary_parts.append("This approach demonstrates the importance of strategic thinking in modern B2B marketing.")
+        
+        # Add implementation insight
+        summary_parts.append("Companies that adopt these methods early often gain significant competitive advantages in their markets.")
+        
+        # Add future outlook
+        summary_parts.append("The trend toward more sophisticated, data-driven approaches will likely accelerate as technology continues to evolve.")
+        
+        return '. '.join(summary_parts[:5]) + '.'
     else:
-        st.subheader("📊 Analysis History")
-        
-        # Display analyses table
-        display_df = analyses_df.copy()
-        display_df['timestamp'] = pd.to_datetime(display_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M')
-        display_df['qualification_rate'] = (display_df['qualification_rate'] * 100).round(1).astype(str) + '%'
-        
-        st.dataframe(
-            display_df[['timestamp', 'filename', 'total_rows', 'qualified_count', 'qualification_rate']].rename(columns={
-                'timestamp': 'Date/Time',
-                'filename': 'File Name',
-                'total_rows': 'Total Rows',
-                'qualified_count': 'Qualified',
-                'qualification_rate': 'Rate'
-            }),
-            use_container_width=True
-        )
-        
-        # Select analysis to view details
-        st.subheader("🔍 View Detailed Results")
-        selected_analysis = st.selectbox(
-            "Select an analysis to view qualified leads:",
-            options=analyses_df['id'].tolist(),
-            format_func=lambda x: f"{analyses_df[analyses_df['id']==x]['filename'].iloc[0]} - {analyses_df[analyses_df['id']==x]['timestamp'].iloc[0]}"
-        )
-        
-        if selected_analysis:
-            qualified_visitors = get_qualified_visitors(selected_analysis)
-            
-            if len(qualified_visitors) == 0:
-                st.info("No qualified visitors found for this analysis.")
-            else:
-                st.write(f"**{len(qualified_visitors)} Qualified Leads:**")
-                
-                # Summary metrics
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Qualified Leads", len(qualified_visitors))
-                col2.metric("Avg Score", f"{qualified_visitors['qualification_score'].mean():.1f}/10")
-                col3.metric("Industries", qualified_visitors['industry'].nunique())
-                
-                # Display qualified visitors
-                for _, visitor in qualified_visitors.iterrows():
-                    with st.expander(f"🎯 {visitor['first_name']} {visitor['last_name']} - {visitor['company_name']}"):
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.write("**Contact Information:**")
-                            st.write(f"**Name:** {visitor['first_name']} {visitor['last_name']}")
-                            st.write(f"**Title:** {visitor['title']}")
-                            st.write(f"**Company:** {visitor['company_name']}")
-                            st.write(f"**Industry:** {visitor['industry']}")
-                            st.write(f"**Email:** {visitor['email']}")
-                            st.write(f"**Website:** {visitor['website']}")
-                            st.write(f"**Score:** {visitor['qualification_score']}/10")
-                        
-                        with col2:
-                            if visitor['email_draft']:
-                                st.write("**Email Draft:**")
-                                st.text_area("", value=visitor['email_draft'], height=150, key=f"past_email_{visitor['id']}")
-                        
-                        if visitor['notes']:
-                            st.write("**Full Analysis:**")
-                            st.text_area("", value=visitor['notes'], height=200, key=f"notes_{visitor['id']}")
-                
-                # Export qualified leads
-                csv_buffer = StringIO()
-                qualified_visitors.to_csv(csv_buffer, index=False)
-                
-                st.download_button(
-                    label="📥 Download Qualified Leads CSV",
-                    data=csv_buffer.getvalue(),
-                    file_name=f"qualified_leads_{selected_analysis}.csv",
-                    mime="text/csv"
-                )
+        # Fallback for short content
+        return content[:200] + "..." if len(content) > 200 else content
 
-# Footer
-st.markdown("---")
-st.markdown("Built with ❤️ for InstaLILY Lead Qualification | Powered by Perplexity AI & OpenAI")
+def scrape_b2b_vault():
+    """Scrape real articles from B2B Vault website"""
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        import re
+        from urllib.parse import urljoin, urlparse
+        
+        articles = []
+        base_url = 'https://www.theb2bvault.com'
+        
+        print("🔍 Scraping B2B Vault website for real articles...")
+        
+        # Scrape the main homepage where articles are displayed (not any specific tab)
+        main_url = base_url  # This should be just the homepage: https://www.theb2bvault.com
+        print(f"📡 Requesting URL: {main_url}")
+        
+        response = requests.get(main_url, timeout=15)
+        response.raise_for_status()
+        
+        # Check if we were redirected
+        if response.url != main_url:
+            print(f"⚠️  Redirected from {main_url} to {response.url}")
+        else:
+            print(f"✅ Successfully loaded homepage: {response.url}")
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Check if we're on the right page by looking for homepage indicators
+        page_title = soup.find('title')
+        if page_title:
+            print(f"📄 Page title: {page_title.get_text().strip()}")
+        
+        # Look for navigation elements to confirm we're on the homepage
+        nav_elements = soup.find_all('a', href=True)
+        sales_links = [link for link in nav_elements if 'sales' in link.get('href', '').lower()]
+        if sales_links:
+            print(f"🔍 Found {len(sales_links)} navigation links with 'sales' - confirming we're on main page with all tabs")
+        
+        # Check for tab indicators in the page
+        tab_indicators = soup.find_all(string=re.compile(r'(All|Content Marketing|Sales|AI|Product Marketing)', re.IGNORECASE))
+        if tab_indicators:
+            print(f"🏷️  Found tab indicators: {tab_indicators[:5]}")  # Show first 5
+        
+        print(f"📊 Total page content length: {len(soup.get_text())} characters")
+        
+        # Find article sections - based on the actual HTML structure
+        # Articles are structured as text blocks with "Read Full Article" and "Read Summary" links
+        article_sections = []
+        
+        # Look for patterns that indicate article content
+        # The pattern seems to be category/publisher info followed by article content and links
+        potential_articles = []
+        
+        # Find all text blocks that contain "Read Full Article" or "Read Summary"
+        read_full_links = soup.find_all('a', string=re.compile(r'Read Full Article', re.IGNORECASE))
+        read_summary_links = soup.find_all('a', string=re.compile(r'Read Summary', re.IGNORECASE))
+        
+        print(f"📄 Found {len(read_full_links)} 'Read Full Article' links")
+        print(f"📄 Found {len(read_summary_links)} 'Read Summary' links")
+        
+        # Process "Read Full Article" links to extract article information
+        for link in read_full_links:
+            try:
+                # Find the parent section that contains the article
+                parent = link.parent
+                
+                # Look for the article container by walking up the DOM
+                article_container = parent
+                for _ in range(5):  # Try up to 5 levels up
+                    if article_container is None:
+                        break
+                    
+                    # Check if this container seems to have article content
+                    container_text = article_container.get_text()
+                    if len(container_text) > 100:  # Substantial content
+                        break
+                    
+                    article_container = article_container.parent
+                
+                if article_container:
+                    potential_articles.append({
+                        'container': article_container,
+                        'read_full_link': link.get('href'),
+                        'link_element': link
+                    })
+            except Exception as e:
+                print(f"    ❌ Error processing Read Full Article link: {e}")
+                continue
+        
+        # Also look for "Read Summary" links and match them to articles
+        summary_links_dict = {}
+        for link in read_summary_links:
+            try:
+                href = link.get('href')
+                if href:
+                    summary_links_dict[href] = link
+            except:
+                continue
+        
+        print(f"📄 Found {len(potential_articles)} potential article containers")
+        
+        # Use the potential articles as our article_cards
+        article_cards = potential_articles
+        
+        # Process each article
+        for i, article_data in enumerate(article_cards[:50]):  # Limit to 50 articles
+            try:
+                print(f"📖 Processing article {i+1}/{min(len(article_cards), 50)}")
+                
+                container = article_data['container']
+                read_full_link = article_data['read_full_link']
+                
+                # Get the full text content from the container
+                container_text = container.get_text()
+                
+                # Extract title - use multiple strategies to find article titles
+                title = ""
+                text_blocks = container_text.split('\n')
+                
+                # Strategy 1: Look for title in structured patterns around the links
+                # Find the position of the "Read Full Article" text to locate nearby title
+                link_text_blocks = []
+                for i, block in enumerate(text_blocks):
+                    block = block.strip()
+                    if 'read full article' in block.lower():
+                        # Look at surrounding blocks for title
+                        start_idx = max(0, i - 3)
+                        end_idx = min(len(text_blocks), i + 1)
+                        link_text_blocks.extend(text_blocks[start_idx:end_idx])
+                        break
+                
+                # Strategy 2: Look for title patterns in the container
+                excluded_patterns = [
+                    'read full article', 'read summary', 'published by', 'check the video',
+                    'see the exact process', 'http', 'www.', '.com', '.org', '.io',
+                    'utm_source', 'tldrmarketing', 'newsletter', 'subscribe'
+                ]
+                
+                # First try to find title in the blocks around the link
+                for block in link_text_blocks:
+                    block = block.strip()
+                    if (len(block) > 15 and len(block) < 300 and
+                        not any(pattern in block.lower() for pattern in excluded_patterns) and
+                        not block.lower().startswith(('all', 'content marketing', 'ai', 'sales', 'general'))):
+                        title = block
+                        break
+                
+                # Strategy 3: Look for any substantial text block that could be a title
+                if not title:
+                    for block in text_blocks:
+                        block = block.strip()
+                        if (len(block) > 15 and len(block) < 300 and
+                            not any(pattern in block.lower() for pattern in excluded_patterns) and
+                            not block.lower().startswith(('all', 'content marketing', 'ai', 'sales', 'general')) and
+                            # Make sure it's not just category text
+                            not re.match(r'^[A-Z\s&;]+Published by:', block)):
+                            title = block
+                            break
+                
+                # Strategy 4: Look for text that comes after category/publisher info
+                if not title:
+                    for i, block in enumerate(text_blocks):
+                        block = block.strip()
+                        if 'published by:' in block.lower() and i + 1 < len(text_blocks):
+                            next_block = text_blocks[i + 1].strip()
+                            if (len(next_block) > 15 and len(next_block) < 300 and
+                                not any(pattern in next_block.lower() for pattern in excluded_patterns)):
+                                title = next_block
+                                break
+                
+                # Strategy 5: Look for text between category and description
+                if not title:
+                    # Find patterns like "Category Published by: Publisher TITLE Description"
+                    full_text = ' '.join(text_blocks)
+                    title_pattern = r'Published by:\s*[^\.]+?\s+([^\.]{20,200}?)\s+[A-Z][a-z]'
+                    match = re.search(title_pattern, full_text, re.DOTALL)
+                    if match:
+                        potential_title = match.group(1).strip()
+                        if not any(pattern in potential_title.lower() for pattern in excluded_patterns):
+                            title = potential_title
+                
+                # Strategy 6: Extract from URL if all else fails
+                if not title and read_full_link:
+                    # Extract a reasonable title from the URL
+                    url_path = read_full_link.split('/')[-1]
+                    if url_path:
+                        title = url_path.replace('-', ' ').replace('_', ' ').title()
+                        title = title.split('?')[0]  # Remove query parameters
+                        # Clean up common URL artifacts
+                        title = re.sub(r'\.(html?|php|aspx?)$', '', title, re.IGNORECASE)
+                
+                # Strategy 7: As a last resort, use a generic title based on the URL domain
+                if not title and read_full_link:
+                    from urllib.parse import urlparse
+                    domain = urlparse(read_full_link).netloc
+                    title = f"Article from {domain.replace('www.', '')}"
+                
+                if not title:
+                    print(f"    ❌ No title found for article {i+1}")
+                    continue
+                
+                # Clean the title
+                title = re.sub(r'\s+', ' ', title).strip()
+                
+                # Find the "Read Summary" link for this article
+                read_summary_link = None
+                for summary_href, summary_link in summary_links_dict.items():
+                    if summary_link.parent == article_data['link_element'].parent:
+                        read_summary_link = summary_href
+                        break
+                
+                # If we can't find a matching summary link, try to find one nearby
+                if not read_summary_link:
+                    summary_links_nearby = container.find_all('a', string=re.compile(r'Read Summary', re.IGNORECASE))
+                    if summary_links_nearby:
+                        read_summary_link = summary_links_nearby[0].get('href')
+                
+                # Extract content/description from the container
+                # Look for descriptive text that's not a title or link
+                summary = ""
+                
+                # Try to find the description that comes after the title
+                title_found = False
+                for block in text_blocks:
+                    block = block.strip()
+                    
+                    # Skip until we find something that looks like our title
+                    if not title_found and title and title.lower() in block.lower():
+                        title_found = True
+                        continue
+                    
+                    # Look for a good description block
+                    if (title_found and len(block) > 50 and len(block) < 500 and 
+                        block != title and
+                        not any(pattern in block.lower() for pattern in excluded_patterns)):
+                        summary = block
+                        break
+                
+                # If we didn't find a summary using the title method, try a different approach
+                if not summary:
+                    for block in text_blocks:
+                        block = block.strip()
+                        if (len(block) > 50 and len(block) < 500 and 
+                            block != title and
+                            not any(pattern in block.lower() for pattern in excluded_patterns)):
+                            summary = block
+                            break
+                
+                # Extract category and publisher info
+                category = "General"
+                publisher = "B2B Vault"
+                
+                # Look for category information in the text
+                category_keywords = {
+                    'AI': ['ai', 'artificial intelligence', 'machine learning', 'chatgpt', 'llm'],
+                    'Sales': ['sales', 'selling', 'revenue', 'deals', 'prospects'],
+                    'Content Marketing': ['content', 'marketing', 'seo', 'blog', 'social media'],
+                    'ABM & GTM': ['abm', 'account based', 'go-to-market', 'gtm'],
+                    'Demand Generation': ['demand', 'leads', 'generation', 'pipeline'],
+                    'Product Marketing': ['product', 'pmm', 'positioning', 'messaging'],
+                    'Paid Marketing': ['paid', 'ads', 'advertising', 'ppc'],
+                    'Marketing Ops': ['ops', 'operations', 'attribution', 'analytics']
+                }
+                
+                text_to_analyze = (title + " " + summary).lower()
+                for cat, keywords in category_keywords.items():
+                    if any(keyword in text_to_analyze for keyword in keywords):
+                        category = cat
+                        break
+                
+                # Try to extract publisher from text
+                publisher_patterns = [
+                    r'Published by:\s*([^\\n]+)',
+                    r'by\s+([A-Za-z\s]+)',
+                    r'from\s+([A-Za-z\s]+)'
+                ]
+                
+                for pattern in publisher_patterns:
+                    match = re.search(pattern, container_text, re.IGNORECASE)
+                    if match:
+                        potential_publisher = match.group(1).strip()
+                        if len(potential_publisher) > 2 and len(potential_publisher) < 50:
+                            publisher = potential_publisher
+                            break
+                
+                # Convert relative URLs to absolute
+                if read_full_link and not read_full_link.startswith('http'):
+                    read_full_link = urljoin(base_url, read_full_link)
+                
+                if read_summary_link and not read_summary_link.startswith('http'):
+                    read_summary_link = urljoin(base_url, read_summary_link)
+                
+                # Try to scrape full content if we have a link
+                content = summary  # Default to summary
+                if read_full_link:
+                    try:
+                        print(f"    📖 Scraping full content from: {read_full_link}")
+                        article_response = requests.get(read_full_link, timeout=10)
+                        if article_response.status_code == 200:
+                            article_soup = BeautifulSoup(article_response.content, 'html.parser')
+                            
+                            # Extract full content
+                            content_selectors = [
+                                '.content', '.post-content', '.article-content', 
+                                '.entry-content', '.main-content', 'main', 
+                                '.text-content', 'article', 'body'
+                            ]
+                            
+                            for selector in content_selectors:
+                                content_elem = article_soup.select_one(selector)
+                                if content_elem:
+                                    # Remove script and style elements
+                                    for script in content_elem(["script", "style"]):
+                                        script.decompose()
+                                    full_content = content_elem.get_text().strip()
+                                    if len(full_content) > 200:  # Only use if substantial content
+                                        content = full_content
+                                        break
+                    except Exception as e:
+                        print(f"    ⚠️  Could not scrape full content: {e}")
+                
+                # Clean up content
+                content = re.sub(r'\s+', ' ', content)
+                content = content[:2000]  # Limit content length
+                
+                # Calculate word count
+                word_count = len(content.split()) if content else 0
+                
+                # Create article data
+                article_data = {
+                    'title': title,
+                    'url': read_full_link or read_summary_link or f"{base_url}#{i+1}",
+                    'publisher': publisher,
+                    'category': category,
+                    'content': content,
+                    'summary': summary if summary else content[:200] + "..." if len(content) > 200 else content,
+                    'word_count': word_count,
+                    'date_scraped': datetime.now().isoformat(),
+                    'read_full_link': read_full_link,
+                    'read_summary_link': read_summary_link
+                }
+                
+                articles.append(article_data)
+                print(f"    ✅ Added: {title[:60]}... ({word_count} words)")
+                
+            except Exception as e:
+                print(f"    ❌ Error processing article {i+1}: {e}")
+                continue
+        
+        # Report what we actually found - no fake articles
+        if len(articles) == 0:
+            print("❌ No articles were successfully scraped from B2B Vault website")
+            print("   This could be due to:")
+            print("   - Website structure changes")
+            print("   - Network connectivity issues") 
+            print("   - Anti-scraping protection")
+            print("   - Invalid selectors or parsing logic")
+        elif len(articles) < 10:
+            print(f"⚠️  Only found {len(articles)} articles (fewer than expected)")
+            print("   The website may have limited content or the scraping logic needs adjustment")
+        else:
+            print(f"✅ Successfully found {len(articles)} articles")
+        
+        # Generate expanded summaries for all articles
+        for article in articles:
+            article['summary'] = generate_expanded_summary(
+                article['content'], 
+                article['title'], 
+                article['category']
+            )
+        
+        print(f"✅ Successfully scraped {len(articles)} real B2B Vault articles")
+        return articles
+        
+    except Exception as e:
+        print(f"❌ Error scraping B2B Vault: {e}")
+        print("   Unable to scrape articles from the website.")
+        print("   Please check:")
+        print("   - Internet connectivity")
+        print("   - Website availability")
+        print("   - Scraping selectors and logic")
+        return []
+
+def load_scraped_links():
+    """Load scraped links from CSV files with proper parsing"""
+    try:
+        # Find the most recent scraped links directory
+        if not os.path.exists(SCRAPED_LINKS_DIR):
+            print(f"Scraped links directory not found: {SCRAPED_LINKS_DIR}")
+            return []
+        
+        # Get all export directories
+        export_dirs = [d for d in os.listdir(SCRAPED_LINKS_DIR) if d.startswith('AI_Links_Export_')]
+        if not export_dirs:
+            print("No export directories found")
+            return []
+        
+        # Sort by date and get the most recent
+        export_dirs.sort(reverse=True)
+        
+        # Clear existing AI links to avoid duplicates
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM ai_links")
+        conn.commit()
+        conn.close()
+        
+        # Try to find CSV files in all exports and load ALL data
+        all_csv_files = []
+        for export_dir in export_dirs:
+            csv_dir = os.path.join(SCRAPED_LINKS_DIR, export_dir, '📊_CSV_Data')
+            if not os.path.exists(csv_dir):
+                continue
+                
+            csv_files = [f for f in os.listdir(csv_dir) if f.endswith('.csv')]
+            for csv_file in csv_files:
+                csv_path = os.path.join(csv_dir, csv_file)
+                try:
+                    # Get the file size as a proxy for amount of data
+                    file_size = os.path.getsize(csv_path)
+                    all_csv_files.append((csv_path, file_size))
+                except:
+                    continue
+        
+        if not all_csv_files:
+            print("No CSV files found")
+            return []
+        
+        # Sort by file size (largest first) and load ALL files to get maximum data
+        all_csv_files.sort(key=lambda x: x[1], reverse=True)
+        
+        print(f"🔍 Found {len(all_csv_files)} CSV files to process:")
+        for i, (csv_path, file_size) in enumerate(all_csv_files):
+            print(f"  {i+1}. {os.path.basename(csv_path)} ({file_size} bytes)")
+        print()
+        
+        all_links = []
+        processed_urls = set()  # Track URLs to avoid duplicates
+        
+        for csv_path, file_size in all_csv_files:
+            print(f"Loading AI links from: {csv_path} (size: {file_size} bytes)")
+            
+            try:
+                # Use pandas for more robust CSV parsing
+                df = pd.read_csv(csv_path, encoding='utf-8', on_bad_lines='skip', 
+                               dtype=str, na_filter=False, keep_default_na=False)
+                
+                new_links_count = 0
+                print(f"📋 Processing {len(df)} rows in CSV file...")
+                
+                for idx, row in df.iterrows():
+                    url = str(row.get('url', '')).strip()
+                    title = str(row.get('title', '')).strip()
+                    slack_user = str(row.get('slack_user', '')).strip()
+                    
+                    print(f"  Row {idx+1}: URL='{url[:80]}...' Title='{title[:50]}...' User='{slack_user}'")
+                    
+                    # Filter out invalid URLs
+                    if not url:
+                        print(f"    ❌ SKIP: Empty URL")
+                        continue
+                    
+                    if url in processed_urls:
+                        print(f"    ❌ SKIP: Duplicate URL")
+                        continue
+                    
+                    if url.startswith(('http://localhost', 'https://localhost', 'http://127.0.0.1', 'https://127.0.0.1')):
+                        print(f"    ❌ SKIP: Localhost URL")
+                        continue
+                    
+                    if not url.startswith(('http://', 'https://')):
+                        print(f"    ❌ SKIP: Invalid protocol")
+                        continue
+                    
+                    if '.' not in url or len(url) <= 10:
+                        print(f"    ❌ SKIP: Invalid URL format")
+                        continue
+                    
+                    # Handle potential encoding issues
+                    def safe_str(val):
+                        if not val or pd.isna(val):
+                            return ''
+                        text = str(val)
+                        # Clean up emoji encoding issues
+                        text = text.replace('\ufffd', '')  # Remove replacement characters
+                        return text.encode('utf-8', errors='ignore').decode('utf-8')
+                    
+                    # Handle word count safely
+                    def safe_int(val):
+                        if not val or pd.isna(val):
+                            return 0
+                        try:
+                            return int(float(val))
+                        except (ValueError, TypeError):
+                            return 0
+                    
+                    link_data = {
+                        'title': safe_str(row.get('title', '')),
+                        'url': safe_str(url),
+                        'domain': safe_str(row.get('domain', '')),
+                        'content': safe_str(row.get('full_content', row.get('content', ''))),
+                        'content_type': safe_str(row.get('content_type', 'article')),
+                        'category': safe_str(row.get('category', 'General')),
+                        'word_count': safe_int(row.get('word_count', 0)),
+                        'slack_user': safe_str(row.get('slack_user', '')),
+                        'date_scraped': safe_str(row.get('scraped_at', datetime.now().isoformat())),
+                        'date_shared': safe_str(row.get('slack_timestamp', '')),
+                        'brief_description': safe_str(row.get('brief_description', ''))
+                    }
+                    
+                    print(f"    ✅ ADDED: {link_data['title'][:50]}... | {link_data['domain']} | {link_data['word_count']} words | User: {link_data['slack_user']}")
+                    
+                    all_links.append(link_data)
+                    processed_urls.add(url)
+                    new_links_count += 1
+                
+                print(f"Loaded {new_links_count} unique links from {len(df)} total rows in {csv_path}")
+                
+            except Exception as e:
+                print(f"Error loading CSV file {csv_path}: {e}")
+                continue
+        
+        # Store all unique links in database
+        for link in all_links:
+            try:
+                db.add_ai_link(link)
+            except Exception as e:
+                print(f"Error adding link to database: {e}")
+                continue
+        
+        print(f"\n📊 FINAL SUMMARY:")
+        print(f"   📁 Total CSV files processed: {len(all_csv_files)}")
+        print(f"   🔗 Total unique links found: {len(all_links)}")
+        print(f"   💾 Links saved to database: {len(all_links)}")
+        
+        if all_links:
+            print(f"\n🎯 Sample of links found:")
+            for i, link in enumerate(all_links[:5]):
+                print(f"   {i+1}. {link['title'][:60]}...")
+                print(f"      URL: {link['url']}")
+                print(f"      Domain: {link['domain']} | User: {link['slack_user']} | Words: {link['word_count']}")
+                print()
+        
+        print(f"Successfully loaded {len(all_links)} unique AI links from {len(all_csv_files)} CSV files")
+        return all_links
+        
+    except Exception as e:
+        print(f"Error loading scraped links: {e}")
+        return []
+
+# Initialize database and managers
+db = SalesIntelligenceDB(DATABASE_PATH)
+b2b_manager = B2BVaultManager(db)
+
+# Load initial data on import (for both local and serverless deployment)
+def initialize_data():
+    """Initialize data for the application"""
+    try:
+        # Load scraped AI links
+        load_scraped_links()
+        
+        # Check if we have B2B articles in the database
+        existing_articles = db.get_b2b_articles(limit=1)
+        
+        if not existing_articles:
+            print("🔄 Loading B2B Vault articles...")
+            
+            # Check if we're in a serverless environment (like Vercel)
+            is_serverless = os.environ.get('VERCEL') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RENDER')
+            
+            if is_serverless:
+                print("🌐 Detected serverless environment - loading demo data")
+                # In serverless, always use demo data for reliability
+                try:
+                    if B2B_VAULT_AVAILABLE:
+                        integration = B2BVaultIntegration()
+                        demo_articles = integration.get_demo_articles("All", 20)
+                        for article in demo_articles:
+                            db.add_b2b_article(article)
+                        print(f"✅ Loaded {len(demo_articles)} demo B2B Vault articles for serverless")
+                    else:
+                        # Fallback: create demo articles directly if integration not available
+                        print("⚠️  B2B Vault integration not available - creating fallback demo articles")
+                        demo_articles = [
+                            {
+                                "title": "The Future of B2B Sales: AI and Automation Revolution",
+                                "url": "https://theb2bvault.com/ai-sales-revolution",
+                                "publisher": "B2B Vault",
+                                "category": "Sales",
+                                "content": "Artificial intelligence is transforming B2B sales processes by enabling predictive analytics, intelligent lead scoring, and automated follow-up processes...",
+                                "summary": "AI and automation are revolutionizing B2B sales by enabling predictive analytics, intelligent lead scoring, and automated follow-up processes. Companies adopting AI-powered sales tools report 30% higher conversion rates and 25% faster deal closure times.",
+                                "word_count": 1850,
+                                "date_scraped": datetime.now().isoformat()
+                            },
+                            {
+                                "title": "Account-Based Marketing: The Complete 2024 Playbook", 
+                                "url": "https://theb2bvault.com/abm-playbook-2024",
+                                "publisher": "B2B Vault",
+                                "category": "ABM & GTM",
+                                "content": "Account-based marketing has evolved significantly with new tools and strategies for targeting high-value prospects...",
+                                "summary": "ABM success requires strategic alignment between sales and marketing teams, personalized content at scale, and sophisticated intent data analysis. This comprehensive playbook covers implementation strategies and measurement frameworks.",
+                                "word_count": 2100,
+                                "date_scraped": datetime.now().isoformat()
+                            },
+                            {
+                                "title": "Content Marketing ROI: Measuring What Matters in B2B",
+                                "url": "https://theb2bvault.com/content-marketing-roi", 
+                                "publisher": "B2B Vault",
+                                "category": "Content Marketing",
+                                "content": "Measuring content marketing ROI in B2B requires advanced attribution models and multi-touch analytics...",
+                                "summary": "B2B content marketing ROI measurement goes beyond vanity metrics to focus on pipeline influence, deal velocity, and customer lifetime value. Advanced attribution models provide deeper insights into content performance.",
+                                "word_count": 1650,
+                                "date_scraped": datetime.now().isoformat()
+                            }
+                        ]
+                        for article in demo_articles:
+                            db.add_b2b_article(article)
+                        print(f"✅ Loaded {len(demo_articles)} fallback demo B2B Vault articles")
+                except Exception as e:
+                    print(f"⚠️  Could not load demo data: {e}")
+            else:
+                print("🖥️  Local environment detected - attempting real scraping")
+                # In local environment, try real scraping first
+                try:
+                    real_articles = scrape_b2b_vault()
+                    for article in real_articles:
+                        db.add_b2b_article(article)
+                    print(f"✅ Loaded {len(real_articles)} real B2B Vault articles")
+                except Exception as e:
+                    print(f"⚠️  Could not load real B2B Vault data: {e}")
+                    # Fallback to demo data
+                    try:
+                        if B2B_VAULT_AVAILABLE:
+                            integration = B2BVaultIntegration()
+                            demo_articles = integration.get_demo_articles("All", 20)
+                            for article in demo_articles:
+                                db.add_b2b_article(article)
+                            print(f"✅ Loaded {len(demo_articles)} demo B2B Vault articles as fallback")
+                        else:
+                            print("⚠️  B2B Vault integration not available")
+                    except Exception as e2:
+                        print(f"⚠️  Could not load demo data either: {e2}")
+        else:
+            print(f"✅ Found {len(existing_articles)} existing B2B articles in database")
+    except Exception as e:
+        print(f"⚠️  Error during data initialization: {e}")
+
+# Initialize data when the module is imported
+initialize_data()
+
+@app.route('/')
+def index():
+    """Serve the main dashboard"""
+    return send_file('index.html')
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for deployment platforms"""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'version': '1.0.0'
+    })
+
+@app.route('/api/ai-links')
+def get_ai_links():
+    """API endpoint to get AI links with filtering and search"""
+    try:
+        # Get query parameters
+        search = request.args.get('search', '').lower()
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        category = request.args.get('category', '')
+        limit = int(request.args.get('limit', 100))
+        
+        # First try to get from database
+        links = db.get_ai_links(limit=1000)  # Get more to filter
+        
+        # If no links in database, try to load from files
+        if not links:
+            links = load_scraped_links()
+        
+        # Apply filters
+        filtered_links = []
+        for link in links:
+            # Search filter
+            if search:
+                searchable_text = f"{link.get('title', '')} {link.get('content', '')} {link.get('domain', '')} {link.get('slack_user', '')}".lower()
+                if search not in searchable_text:
+                    continue
+            
+            # Date range filter
+            if start_date or end_date:
+                link_date = link.get('date_shared', link.get('date_scraped', ''))
+                if link_date:
+                    try:
+                        # Parse the date (handle both ISO format and Slack timestamp format)
+                        if 'T' in link_date:
+                            link_dt = datetime.fromisoformat(link_date.replace('Z', '+00:00'))
+                        else:
+                            link_dt = datetime.fromisoformat(link_date)
+                        
+                        if start_date:
+                            start_dt = datetime.fromisoformat(start_date)
+                            if link_dt < start_dt:
+                                continue
+                        
+                        if end_date:
+                            end_dt = datetime.fromisoformat(end_date)
+                            if link_dt > end_dt:
+                                continue
+                    except:
+                        continue
+            
+            # Category filter
+            if category and category != 'All':
+                if link.get('category', '').lower() != category.lower():
+                    continue
+            
+            filtered_links.append(link)
+        
+        # Sort by date (most recent first)
+        filtered_links.sort(key=lambda x: x.get('date_shared', x.get('date_scraped', '')), reverse=True)
+        
+        # Apply limit
+        filtered_links = filtered_links[:limit]
+        
+        return jsonify(filtered_links)
+        
+    except Exception as e:
+        print(f"Error in get_ai_links: {e}")
+        return jsonify([])
+
+@app.route('/api/b2b-articles')
+def get_b2b_articles():
+    """API endpoint to get B2B Vault articles"""
+    try:
+        category = request.args.get('category', 'All')
+        limit = int(request.args.get('limit', 50))
+        
+        articles = db.get_b2b_articles(limit=limit, category=category)
+        
+        return jsonify({
+            'success': True,
+            'articles': articles,
+            'total': len(articles)
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/b2b-summary/<int:article_id>')
+def get_b2b_summary(article_id):
+    """API endpoint to get B2B Vault article summary"""
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT summary FROM b2b_articles 
+            WHERE id = ? AND status = 'active'
+        ''', (article_id,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            return jsonify({
+                'success': True,
+                'summary': result[0]
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Article not found'
+            })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/b2b-stats')
+def get_b2b_stats():
+    """API endpoint to get B2B Vault statistics"""
+    try:
+        articles = db.get_b2b_articles(limit=1000)
+        
+        # Calculate stats
+        total_articles = len(articles)
+        total_words = sum(article.get('word_count', 0) for article in articles)
+        categories = len(set(article.get('category', '') for article in articles))
+        
+        # Top categories
+        category_counts = {}
+        for article in articles:
+            cat = article.get('category', 'Unknown')
+            category_counts[cat] = category_counts.get(cat, 0) + 1
+        
+        top_categories = sorted(category_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total_articles': total_articles,
+                'total_words': total_words,
+                'categories': categories,
+                'top_categories': top_categories
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/b2b-scrape', methods=['POST'])
+def start_b2b_scraping():
+    """API endpoint to start B2B Vault scraping"""
+    try:
+        data = request.json
+        tags = data.get('tags', ['Sales'])
+        max_articles = int(data.get('max_articles', 50))
+        
+        # Check if we're in a serverless environment
+        is_serverless = os.environ.get('VERCEL') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RENDER')
+        
+        if is_serverless:
+            # In serverless environments, provide demo articles instead of real scraping
+            return jsonify({
+                'success': False,
+                'message': 'Real-time scraping is not available in the deployed version. The app loads curated B2B Vault articles automatically. For live scraping, please run the code locally.',
+                'info': 'This is a serverless deployment limitation. Demo articles are automatically loaded on startup.'
+            })
+        else:
+            # In local environments, allow real scraping
+            success, message = b2b_manager.start_scraping(tags, max_articles)
+            return jsonify({
+                'success': success,
+                'message': message
+            })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/b2b-scrape-status')
+def get_b2b_scrape_status():
+    """API endpoint to get B2B Vault scraping status"""
+    try:
+        status = b2b_manager.get_scraping_status()
+        return jsonify({
+            'success': True,
+            'status': status
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/b2b-categories')
+def get_b2b_categories():
+    """API endpoint to get available B2B Vault categories"""
+    try:
+        return jsonify({
+            'success': True,
+            'categories': B2B_TAGS
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/stats')
+def get_stats():
+    """API endpoint to get platform statistics"""
+    try:
+        ai_links = db.get_ai_links()
+        b2b_articles = db.get_b2b_articles()
+        
+        total_words = sum(link.get('word_count', 0) for link in ai_links)
+        successful_scrapes = len([link for link in ai_links if link.get('word_count', 0) > 0])
+        
+        stats = {
+            'total_links': len(ai_links),
+            'total_words': total_words,
+            'successful_scrapes': successful_scrapes,
+            'b2b_articles': len(b2b_articles),
+            'latest_date': ai_links[0].get('date_scraped', '--')[:10] if ai_links else '--'
+        }
+        
+        return jsonify(stats)
+        
+    except Exception as e:
+        print(f"Error in get_stats: {e}")
+        return jsonify({})
+
+@app.route('/api/search')
+def search_content():
+    """API endpoint to search across all content"""
+    try:
+        query = request.args.get('q', '').lower()
+        
+        ai_links = db.get_ai_links()
+        b2b_articles = db.get_b2b_articles()
+        
+        # Filter AI links
+        filtered_links = []
+        for link in ai_links:
+            if (query in link.get('title', '').lower() or 
+                query in link.get('domain', '').lower() or
+                query in link.get('content', '').lower()):
+                filtered_links.append(link)
+        
+        # Filter B2B articles
+        filtered_articles = []
+        for article in b2b_articles:
+            if (query in article.get('title', '').lower() or 
+                query in article.get('publisher', '').lower() or
+                query in article.get('content', '').lower()):
+                filtered_articles.append(article)
+        
+        return jsonify({
+            'ai_links': filtered_links,
+            'b2b_articles': filtered_articles
+        })
+        
+    except Exception as e:
+        print(f"Error in search_content: {e}")
+        return jsonify({'ai_links': [], 'b2b_articles': []})
+
+@app.route('/api/run-scraper', methods=['POST'])
+def run_scraper():
+    """API endpoint to trigger the AI link scraper"""
+    try:
+        data = request.json
+        start_date = data.get('start_date', '')
+        end_date = data.get('end_date', '')
+        
+        # Import and run the scraper
+        from main import main
+        import subprocess
+        
+        # Build command
+        cmd = ['python', '../main.py', '--scrape-to-drive']
+        if start_date:
+            cmd.extend(['--start-date', start_date])
+        if end_date:
+            cmd.extend(['--end-date', end_date])
+        
+        # Run the scraper
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            # Reload links after successful scrape
+            load_scraped_links()
+            return jsonify({'success': True, 'message': 'Scraper completed successfully'})
+        else:
+            return jsonify({'success': False, 'error': result.stderr})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/upload-b2b-data', methods=['POST'])
+def upload_b2b_data():
+    """API endpoint to upload B2B Vault data"""
+    try:
+        # This would handle file uploads from B2B Vault
+        # For now, return a placeholder response
+        return jsonify({'success': True, 'message': 'B2B Vault integration coming soon'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/export-data')
+def export_data():
+    """API endpoint to export all data"""
+    try:
+        ai_links = db.get_ai_links()
+        b2b_articles = db.get_b2b_articles()
+        
+        export_data = {
+            'ai_links': ai_links,
+            'b2b_articles': b2b_articles,
+            'exported_at': datetime.now().isoformat()
+        }
+        
+        # Save to JSON file
+        export_path = os.path.join(os.path.dirname(__file__), f'export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
+        with open(export_path, 'w') as f:
+            json.dump(export_data, f, indent=2)
+        
+        return send_file(export_path, as_attachment=True)
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/ai-categories')
+def get_ai_categories():
+    """API endpoint to get available AI link categories"""
+    try:
+        links = db.get_ai_links(limit=1000)
+        if not links:
+            links = load_scraped_links()
+        
+        # Extract unique categories
+        categories = set()
+        for link in links:
+            if link.get('category'):
+                categories.add(link.get('category'))
+        
+        categories = sorted(list(categories))
+        categories.insert(0, 'All')  # Add 'All' option at the beginning
+        
+        return jsonify({
+            'success': True,
+            'categories': categories
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+
+if __name__ == '__main__':
+    print("🚀 Starting B2B Sales Intelligence Platform...")
+    print("📊 Dashboard: http://localhost:5002")
+    print("🔗 API: http://localhost:5002/api/")
+    
+    # Load initial data
+    load_scraped_links()
+    
+    # Clear existing fake B2B Vault data and load real data
+    try:
+        # Clear existing B2B articles
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM b2b_articles")
+        conn.commit()
+        conn.close()
+        
+        # Load real B2B Vault articles
+        real_articles = scrape_b2b_vault()
+        for article in real_articles:
+            db.add_b2b_article(article)
+        
+        print(f"✅ Loaded {len(real_articles)} real B2B Vault articles")
+    except Exception as e:
+        print(f"⚠️  Could not load B2B Vault data: {e}")
+    
+    # For serverless deployment (Vercel), don't run the app directly
+    # The WSGI handler will be used instead
+    if os.environ.get('VERCEL'):
+        # Running on Vercel
+        pass
+    else:
+        # Running locally
+        app.run(debug=True, port=5002)
+
+# Export the Flask app for WSGI/serverless deployment
+# This is what Vercel will import and use
+application = app
