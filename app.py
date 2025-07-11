@@ -559,26 +559,24 @@ if page == "Upload CSV & Analyze":
 
 elif page == "View Past Results":
     st.title("📈 Past Analysis Results")
-    
     # Get past analyses
     analyses_df = get_past_analyses()
-    
     if len(analyses_df) == 0:
         st.info("No past analyses found. Upload a CSV to get started!")
     else:
         st.subheader("📊 Analysis History")
-        
         # Display analyses table
         display_df = analyses_df.copy()
         display_df['timestamp'] = pd.to_datetime(display_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M')
         display_df['qualification_rate'] = (display_df['qualification_rate'] * 100).round(1).astype(str) + '%'
-        
+        # Show only the count of qualified leads in the 'Qualified' column
+        display_df['Qualified'] = display_df['qualified_count'].astype(int)
         st.dataframe(
-            display_df[['timestamp', 'filename', 'total_rows', 'qualified_count', 'qualification_rate']].rename(columns={
+            display_df[['timestamp', 'filename', 'total_rows', 'Qualified', 'qualification_rate']].rename(columns={
                 'timestamp': 'Date/Time',
                 'filename': 'File Name',
                 'total_rows': 'Total Rows',
-                'qualified_count': 'Qualified',
+                'Qualified': 'Qualified',
                 'qualification_rate': 'Rate'
             }),
             use_container_width=True
