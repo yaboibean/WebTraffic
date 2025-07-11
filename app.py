@@ -570,7 +570,7 @@ elif page == "View Past Results":
         display_df['timestamp'] = pd.to_datetime(display_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M')
         display_df['qualification_rate'] = (display_df['qualification_rate'] * 100).round(1).astype(str) + '%'
         # Show only the count of qualified leads in the 'Qualified' column
-        display_df['Qualified'] = display_df['qualified_count'].astype(int)
+        display_df['Qualified'] = display_df['qualified_visitors_count'].astype(int)
         st.dataframe(
             display_df[['timestamp', 'filename', 'total_rows', 'Qualified', 'qualification_rate']].rename(columns={
                 'timestamp': 'Date/Time',
