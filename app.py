@@ -516,14 +516,17 @@ init_database()
 
 
 from PIL import Image
-logo_path = "instalily_logo.png"  # Place your logo file in the project root
+import os
+# Always use the directory of this script for the logo path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+logo_path = os.path.join(script_dir, "instalily_logo.png")
 logo_shown = False
 try:
     logo_img = Image.open(logo_path)
     st.sidebar.image(logo_img, use_column_width=True)
     logo_shown = True
 except Exception as e:
-    st.sidebar.error(f"Logo failed to load: {e}\nPath tried: {os.path.abspath(logo_path)}")
+    st.sidebar.error(f"Logo failed to load: {e}\nPath tried: {logo_path}")
 st.sidebar.markdown("<h2 style='text-align: center;'>InstaLILY Lead Qualification</h2>", unsafe_allow_html=True)
 page = st.sidebar.selectbox("Choose Action", ["Upload CSV & Analyze", "View Past Results"])
 
