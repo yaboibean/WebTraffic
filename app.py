@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import requests
@@ -10,10 +9,6 @@ from datetime import datetime
 import re
 import json
 from io import StringIO
-from dotenv import load_dotenv
-
-# Load environment variables from .env
-load_dotenv()
 
 # Page config
 st.set_page_config(
@@ -24,9 +19,9 @@ st.set_page_config(
 )
 
 # Constants
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+PERPLEXITY_API_KEY = st.secrets.get("PERPLEXITY_API_KEY", "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")
 PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
 # Database setup
 def init_database():
@@ -530,6 +525,7 @@ if page == "Upload CSV & Analyze":
                         for _, row in qualified_df.iterrows():
                             with st.expander(f"🎯 {row.get('FirstName', '')} {row.get('LastName', '')} - {row.get('CompanyName', '')}"):
                                 col1, col2 = st.columns(2)
+                                
                                 with col1:
                                     st.write("**Contact Info:**")
                                     st.write(f"Name: {row.get('FirstName', '')} {row.get('LastName', '')}")
@@ -538,17 +534,14 @@ if page == "Upload CSV & Analyze":
                                     st.write(f"Industry: {row.get('Industry', 'N/A')}")
                                     st.write(f"Email: {row.get('Email', 'N/A')}")
                                     st.write(f"Score: {row.get('Score', 'N/A')}/10")
+                                
                                 with col2:
                                     if include_emails and row.get('EmailDraft'):
                                         st.write("**Draft Email:**")
                                         st.text_area("", value=row.get('EmailDraft', ''), height=100, key=f"email_{row.name}")
+                                
                                 st.write("**Qualification Rationale:**")
                                 st.write(row.get('Rationale', 'No rationale available'))
-                                # Toggle for full AI thinking/processes/searches
-                                show_thinking = st.checkbox("Show all AI thinking/processes/searches", key=f"thinking_{row.name}")
-                                if show_thinking:
-                                    st.write("**Full AI Analysis & Search Details:**")
-                                    st.text_area("", value=row.get('Notes', 'No details available'), height=250, key=f"notes_{row.name}")
                     
                     # Download results
                     csv_buffer = StringIO()
@@ -650,4 +643,4 @@ elif page == "View Past Results":
 
 # Footer
 st.markdown("---")
-st.markdown("InstaLILY Lead Qualification | InstaLILY 2025")
+st.markdown("Built with ❤️ for InstaLILY Lead Qualification | Powered by Perplexity AI & OpenAI")
