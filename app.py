@@ -563,7 +563,7 @@ if page == "Upload CSV & Analyze":
             if not process_all:
                 with col2:
                     # Show spreadsheet-style row numbers (starting from 1)
-                    row_numbers = list(range(1, len(df) + 2))
+                    row_numbers = list(range(1, len(df) + 1))
                     selected_rows = st.multiselect(
                         "Select specific rows (spreadsheet row number, starting from 1)",
                         options=row_numbers,
