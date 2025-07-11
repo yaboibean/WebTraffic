@@ -444,7 +444,7 @@ if page == "Upload CSV & Analyze":
                 batch_size = st.selectbox("Batch size (for large datasets)", [1, 5, 10, 25, 50], index=2)
             
             # Time estimate (initial static, will update dynamically during processing)
-            estimated_time = len(df) * 45  # seconds (initial guess)
+            estimated_time = len(df) * 10.1  # seconds (initial guess)
             time_estimate_placeholder = st.info(f"⏱️ Estimated processing time: {estimated_time // 60}m {estimated_time % 60}s for {len(df)} rows")
             
             # Process button
