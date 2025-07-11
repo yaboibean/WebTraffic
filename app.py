@@ -57,6 +57,13 @@ PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
 PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
+# Debug info for .env loading
+import pathlib
+st.sidebar.markdown("---")
+st.sidebar.write(f"**Current working directory:** {os.getcwd()}")
+st.sidebar.write(f"**.env file exists:** {pathlib.Path('.env').exists()}")
+st.sidebar.write(f"**PERPLEXITY_API_KEY loaded:** {'Yes' if PERPLEXITY_API_KEY else 'No'}")
+st.sidebar.write(f"**OPENAI_API_KEY loaded:** {'Yes' if OPENAI_API_KEY else 'No'}")
 # Warn if keys are missing
 if not PERPLEXITY_API_KEY or not OPENAI_API_KEY:
     st.warning("One or more API keys are missing. Please ensure PERPLEXITY_API_KEY and OPENAI_API_KEY are set in your .env file and restart the app.")
