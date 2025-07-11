@@ -445,7 +445,9 @@ if page == "Upload CSV & Analyze":
             
             # Time estimate (initial static, will update dynamically during processing)
             estimated_time = len(df) * 10.1  # seconds (initial guess)
-            time_estimate_placeholder = st.info(f"⏱️ Estimated processing time: {estimated_time // 60}m {estimated_time % 60}s for {len(df)} rows")
+            est_minutes = int(estimated_time // 60)
+            est_seconds = int(estimated_time % 60)
+            time_estimate_placeholder = st.info(f"⏱️ Estimated processing time: {est_minutes}m {est_seconds}s for {len(df)} rows")
             
             # Process button
             if st.button("🚀 Start Analysis", type="primary"):
@@ -469,7 +471,10 @@ if page == "Upload CSV & Analyze":
                     for idx, row in enumerate(df.itertuples(index=False)):
                         row_start = time.time()
                         # Convert row to dict for compatibility
-                        row_dict = row._asdict() if hasattr(row, '_asdict') else dict(row)
+                        if hasattr(row, '_asdict'):
+                            row_dict = row._asdict()
+                        else:
+                            row_dict = dict(zip(df.columns, row))
                         status_text.text(f"Processing {idx + 1}/{len(df)}: {row_dict.get('FirstName', 'N/A')} {row_dict.get('LastName', 'N/A')} at {row_dict.get('CompanyName', 'N/A')}")
                         result = qualify_visitor(row_dict, progress_bar, idx, len(df))
                         qual_flags.append(result['qualified'])
