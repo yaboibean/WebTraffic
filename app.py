@@ -447,7 +447,8 @@ if page == "Upload CSV & Analyze":
             estimated_time = len(df) * 10.1  # seconds (initial guess)
             est_minutes = int(estimated_time // 60)
             est_seconds = int(estimated_time % 60)
-            time_estimate_placeholder = st.info(f"⏱️ Estimated processing time: {est_minutes}m {est_seconds}s for {len(df)} rows")
+            time_estimate_placeholder = st.empty()
+            time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_minutes}m {est_seconds}s for {len(df)} rows")
             
             # Process button
             if st.button("🚀 Start Analysis", type="primary"):
@@ -459,8 +460,7 @@ if page == "Upload CSV & Analyze":
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     results_container = st.empty()
-                    # Dynamic time estimate
-                    time_estimate_placeholder = st.empty()
+                    # Use the same placeholder for dynamic time estimate
                     qual_flags = []
                     notes_list = []
                     scores_list = []
@@ -490,7 +490,7 @@ if page == "Upload CSV & Analyze":
                         est_time_left = avg_time * rows_left
                         est_minutes = int(est_time_left // 60)
                         est_seconds = int(est_time_left % 60)
-                        # Update dynamic time estimate with whole numbers only
+                        # Replace static estimate with dynamic one
                         time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)")
                         # Show live results
                         qualified_count = sum(qual_flags)
