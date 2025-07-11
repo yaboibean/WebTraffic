@@ -147,6 +147,30 @@ def is_valid_data(value):
     str_val = str(value).strip().lower()
     return str_val not in ['nan', 'n/a', '', 'none']
 
+def extract_rationale(text):
+    """Extract comprehensive rationale from Perplexity response"""
+    lines = text.split('\n')
+    key_points = []
+    
+    for line in lines[1:]:  # Skip the Yes/No line
+        line = line.strip()
+        if line and len(line) > 15 and not line.startswith('Score:') and '---' not in line:
+            line = line.lstrip('•-* ').strip()
+            if any(keyword in line.lower() for keyword in ['company', 'role', 'industry', 'experience', 'decision', 'revenue', 'size', 'potential', 'fit', 'budget', 'authority', 'need', 'timeline', 'qualified', 'unqualified', 'because', 'however', 'although', 'likely', 'strong', 'weak']):
+                key_points.append(line)
+            if len(key_points) >= 4:
+                break
+    
+    if key_points:
+        rationale = " | ".join(key_points)
+        if len(rationale) > 400:
+            rationale = rationale[:397] + "..."
+        return rationale
+    else:
+        text_clean = text.replace('\n', ' ').strip()
+        if len(text_clean) > 100:
+            return text_clean[:397] + "..." if len(text_clean) > 400 else text_clean
+        return "Analysis completed - see detailed response above"
 
 def draft_email_with_openai(email_prompt):
     """Draft email using OpenAI API"""
@@ -393,18 +417,18 @@ if page == "Upload CSV & Analyze":
             # Read CSV
             df = pd.read_csv(uploaded_file)
             st.success(f"✅ Loaded {len(df)} rows from {uploaded_file.name}")
-
+            
             # Display preview
             st.subheader("📋 Data Preview")
             st.dataframe(df.head(10))
-
+            
             # Row selection
             st.subheader("🎯 Select Rows to Process")
             col1, col2 = st.columns(2)
-
+            
             with col1:
                 process_all = st.checkbox("Process all rows", value=True)
-
+            
             if not process_all:
                 with col2:
                     selected_rows = st.multiselect(
@@ -413,21 +437,21 @@ if page == "Upload CSV & Analyze":
                         default=list(range(min(10, len(df))))
                     )
                     df = df.iloc[selected_rows].reset_index(drop=True)
-
+            
             # Configuration
             st.subheader("⚙️ Configuration")
             col1, col2 = st.columns(2)
-
+            
             with col1:
                 include_emails = st.checkbox("Generate email drafts for qualified leads", value=True)
-
+            
             with col2:
                 batch_size = st.selectbox("Batch size (for large datasets)", [1, 5, 10, 25, 50], index=2)
-
-            # Initial static time estimate
-            estimated_time = len(df) * 10  # seconds
-            time_estimate_box = st.info(f"⏱️ Estimated processing time: {estimated_time // 60}m {estimated_time % 60}s for {len(df)} rows")
-
+            
+            # Time estimate
+            estimated_time = len(df) * 45  # seconds
+            st.info(f"⏱️ Estimated processing time: {estimated_time // 60}m {estimated_time % 60}s for {len(df)} rows")
+            
             # Process button
             if st.button("🚀 Start Analysis", type="primary"):
                 if len(df) == 0:
@@ -435,45 +459,31 @@ if page == "Upload CSV & Analyze":
                 else:
                     # Processing
                     st.subheader("🔄 Processing...")
-
+                    
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     results_container = st.empty()
-                    # Dynamic time estimate
-                    dynamic_time_box = st.empty()
-
+                    
                     # Process each row
                     qual_flags = []
                     notes_list = []
                     scores_list = []
                     email_drafts = []
                     rationales = []
-
+                    
                     start_time = time.time()
-                    row_times = []
-
-                    for idx in range(len(df)):
-                        row_start = time.time()
-                        row = df.iloc[idx]
+                    
+                    for idx, row in df.iterrows():
                         status_text.text(f"Processing {idx + 1}/{len(df)}: {row.get('FirstName', 'N/A')} {row.get('LastName', 'N/A')} at {row.get('CompanyName', 'N/A')}")
+                        
                         result = qualify_visitor(row, progress_bar, idx, len(df))
-
+                        
                         qual_flags.append(result['qualified'])
                         notes_list.append(result['notes'])
                         scores_list.append(result['score'])
                         email_drafts.append(result['email_draft'] if include_emails else "")
                         rationales.append(result['rationale'])
-
-                        # Track time for this row
-                        row_end = time.time()
-                        row_times.append(row_end - row_start)
-
-                        # Dynamic time estimate
-                        avg_time = sum(row_times) / len(row_times)
-                        rows_left = len(df) - (idx + 1)
-                        est_remaining = int(avg_time * rows_left)
-                        dynamic_time_box.info(f"⏱️ Estimated time remaining: {est_remaining // 60}m {est_remaining % 60}s for {rows_left} rows (avg {avg_time:.1f}s/row)")
-
+                        
                         # Show live results
                         qualified_count = sum(qual_flags)
                         with results_container.container():
@@ -481,13 +491,13 @@ if page == "Upload CSV & Analyze":
                             col1.metric("Processed", f"{idx + 1}/{len(df)}")
                             col2.metric("Qualified", qualified_count)
                             col3.metric("Rate", f"{qualified_count/(idx+1)*100:.1f}%")
-
+                            
                             if result['qualified']:
                                 st.success(f"✅ {row.get('FirstName', '')} {row.get('LastName', '')} - QUALIFIED")
                                 st.write(f"💭 {result['rationale']}")
                             else:
                                 st.warning(f"❌ {row.get('FirstName', '')} {row.get('LastName', '')} - Not Qualified")
-
+                    
                     # Add results to dataframe
                     df['Qualified'] = qual_flags
                     df['Notes'] = notes_list
@@ -495,28 +505,28 @@ if page == "Upload CSV & Analyze":
                     if include_emails:
                         df['EmailDraft'] = email_drafts
                     df['Rationale'] = rationales
-
+                    
                     # Calculate final stats
                     qualified_count = df['Qualified'].sum()
                     total_time = time.time() - start_time
-
+                    
                     # Save to database
                     analysis_id = save_analysis_results(uploaded_file.name, df)
-
+                    
                     # Display final results
                     st.subheader("🎉 Analysis Complete!")
-
+                    
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("Total Processed", len(df))
                     col2.metric("Qualified", qualified_count)
                     col3.metric("Qualification Rate", f"{qualified_count/len(df)*100:.1f}%")
                     col4.metric("Processing Time", f"{total_time/60:.1f}m")
-
+                    
                     # Display qualified leads
                     if qualified_count > 0:
                         st.subheader("✅ Qualified Leads")
                         qualified_df = df[df['Qualified'] == True]
-
+                        
                         for _, row in qualified_df.iterrows():
                             with st.expander(f"🎯 {row.get('FirstName', '')} {row.get('LastName', '')} - {row.get('CompanyName', '')}"):
                                 col1, col2 = st.columns(2)
@@ -539,18 +549,18 @@ if page == "Upload CSV & Analyze":
                                 if show_thinking:
                                     st.write("**Full AI Analysis & Search Details:**")
                                     st.text_area("", value=row.get('Notes', 'No details available'), height=250, key=f"notes_{row.name}")
-
+                    
                     # Download results
                     csv_buffer = StringIO()
                     df.to_csv(csv_buffer, index=False)
-
+                    
                     st.download_button(
                         label="📥 Download Results CSV",
                         data=csv_buffer.getvalue(),
                         file_name=f"qualified_leads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                         mime="text/csv"
                     )
-
+                    
         except Exception as e:
             st.error(f"Error processing file: {str(e)}")
 
@@ -640,4 +650,4 @@ elif page == "View Past Results":
 
 # Footer
 st.markdown("---")
-st.markdown("Potential Lead Qualification | InstaLILY 2025")
+st.markdown("InstaLILY Lead Qualification | InstaLILY 2025")
