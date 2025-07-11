@@ -13,43 +13,10 @@ from io import StringIO
 # Page config
 st.set_page_config(
     page_title="InstaLILY Lead Qualification Tool",
-    page_icon="instalily_logo.png",  # Use your logo file here
+    page_icon="🚀",
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# Custom CSS for InstaLILY theme
-st.markdown("""
-    <style>
-    .block-container {
-        padding-top: 2rem;
-        font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-        background-color: #f8fafc;
-    }
-    .stButton > button {
-        background-color: #1a2233;
-        color: #fff;
-        border-radius: 8px;
-        font-weight: 600;
-        padding: 0.5rem 1.5rem;
-        font-size: 1rem;
-    }
-    .stButton > button:hover {
-        background-color: #2c3654;
-        color: #fff;
-    }
-    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
-        color: #1a2233;
-        font-weight: 700;
-    }
-    .stSidebar .sidebar-content {
-        background-color: #fff;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# Add InstaLILY logo to top left
-st.sidebar.image("instalily_logo.png", width=140)
 
 # Constants
 PERPLEXITY_API_KEY = st.secrets.get("PERPLEXITY_API_KEY", "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")
@@ -426,8 +393,7 @@ Very formal!
 init_database()
 
 # Sidebar navigation
-st.sidebar.markdown("<h2 style='color:#1a2233;font-weight:700;margin-bottom:0;'>INSTA<br>LILY_</h2>", unsafe_allow_html=True)
-st.sidebar.markdown("<span style='color:#6b7280;font-size:1rem;'>Vertical AI Agent Platform</span>", unsafe_allow_html=True)
+st.sidebar.title("🚀 InstaLILY Lead Qualification")
 page = st.sidebar.selectbox("Choose Action", ["Upload CSV & Analyze", "View Past Results"])
 
 if page == "Upload CSV & Analyze":
