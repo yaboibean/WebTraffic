@@ -515,7 +515,15 @@ init_database()
 # Sidebar navigation
 
 
-st.sidebar.title("🚀 InstaLILY Lead Qualification")
+from PIL import Image
+logo_path = "instalily_logo.png"  # Place your logo file in the project root
+try:
+    logo_img = Image.open(logo_path)
+    st.sidebar.image(logo_img, use_column_width=True)
+except Exception:
+    st.sidebar.write(":rocket: InstaLILY Lead Qualification")
+else:
+    st.sidebar.markdown("<h2 style='text-align: center;'>InstaLILY Lead Qualification</h2>", unsafe_allow_html=True)
 page = st.sidebar.selectbox("Choose Action", ["Upload CSV & Analyze", "View Past Results"])
 
 if page == "Upload CSV & Analyze":
