@@ -643,4 +643,4 @@ elif page == "View Past Results":
 
 # Footer
 st.markdown("---")
-st.markdown("Built with ❤️ for InstaLILY Lead Qualification | Powered by Perplexity AI & OpenAI")
+st.markdown("Potential Lead Qualification | InstaLILY 2025")
