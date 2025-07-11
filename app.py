@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import requests
@@ -10,10 +9,6 @@ from datetime import datetime
 import re
 import json
 from io import StringIO
-from dotenv import load_dotenv
-
-# Load environment variables from .env
-load_dotenv()
 
 # Page config
 st.set_page_config(
@@ -24,9 +19,9 @@ st.set_page_config(
 )
 
 # Constants
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "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")
+PERPLEXITY_API_KEY = st.secrets.get("PERPLEXITY_API_KEY", "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")
 PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
 # Database setup
 def init_database():

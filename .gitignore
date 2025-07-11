@@ -1,5 +1,13 @@
-.env
-qualification_results.db
+# .gitignore for InstaLILY Lead Qualification Web App
 __pycache__/
 *.pyc
+*.pyo
+*.db
+*.sqlite3
+.env
+qualification_results.db
+Processed/
+Data/
+.idea/
+.vscode/
 .DS_Store
