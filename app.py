@@ -526,12 +526,16 @@ if page == "Upload CSV & Analyze":
     st.title("📊 Lead Qualification Analysis")
     st.markdown("Upload a CSV file with visitor data to qualify leads using AI-powered analysis.")
     
-    # File upload
-    uploaded_file = st.file_uploader(
-        "Choose a CSV file", 
-        type=['csv'],
-        help="Upload a CSV file containing visitor data with columns like FirstName, LastName, Title, CompanyName, Industry, etc."
-    )
+    # File upload area reshaped to be more square
+    with st.container():
+        st.markdown("<div style='height: 40px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='display: flex; justify-content: center; align-items: center; height: 250px;'><div style='width: 350px;'>", unsafe_allow_html=True)
+        uploaded_file = st.file_uploader(
+            "\n\n\n\n\n\n\nChoose a CSV file", 
+            type=['csv'],
+            help="Upload a CSV file containing visitor data with columns like FirstName, LastName, Title, CompanyName, Industry, etc."
+        )
+        st.markdown("</div></div>", unsafe_allow_html=True)
     
 
     if uploaded_file is not None:
