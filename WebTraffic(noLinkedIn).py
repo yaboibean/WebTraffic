@@ -6,12 +6,17 @@ import time
 import os
 import sys
 import re
+
 import openai
+from dotenv import load_dotenv
 
 # Constants
-PERPLEXITY_API_KEY = "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"
+
+# Load environment variables from .env file
+load_dotenv()
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
-OPENAI_API_KEY = "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"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # === Select CSVs to Process ===
 folder_path = os.path.join(os.path.dirname(__file__), "Data")
