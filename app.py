@@ -483,10 +483,10 @@ if page == "Upload CSV & Analyze":
                         avg_time = sum(row_times) / len(row_times)
                         rows_left = len(df) - (idx + 1)
                         est_time_left = avg_time * rows_left
-                        est_minutes = int(est_time_left // 60)
-                        est_seconds = int(est_time_left % 60)
-                        # Update dynamic time estimate with rounded values
-                        time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_minutes}m {est_seconds}s (avg {avg_time:.1f}s/row, {rows_left} left)")
+                        est_minutes = round(est_time_left // 60)
+                        est_seconds = round(est_time_left % 60)
+                        # Update dynamic time estimate with whole numbers only
+                        time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {int(est_minutes)}m {int(est_seconds)}s (avg {round(avg_time)}s/row, {rows_left} left)")
                         # Show live results
                         qualified_count = sum(qual_flags)
                         with results_container.container():
