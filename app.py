@@ -49,7 +49,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Add InstaLILY logo to top left
-st.sidebar.image("instalily_logo.webp", width=140)
+st.sidebar.image("instalily_logo.png", width=140)
 
 # Constants
 PERPLEXITY_API_KEY = st.secrets.get("PERPLEXITY_API_KEY", "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")
