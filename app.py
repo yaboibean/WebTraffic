@@ -454,152 +454,146 @@ if page == "Upload CSV & Analyze":
                 df = pd.read_csv(uploaded_file)
                 print(f"Loaded {len(df)} rows from {uploaded_file.name}")
                 st.success(f"✅ Loaded {len(df)} rows from {uploaded_file.name}")
-
-                # Display preview
-                st.subheader("📋 Data Preview")
-                st.dataframe(df.head(10))
-
-                # Row selection
-                st.subheader("🎯 Select Rows to Process")
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    process_all = st.checkbox("Process all rows", value=True)
-
-                if not process_all:
-                    with col2:
-                        selected_rows = st.multiselect(
-                            "Select specific rows (by index)",
-                            options=list(range(len(df))),
-                            default=list(range(min(10, len(df))))
-                        )
-                        df = df.iloc[selected_rows].reset_index(drop=True)
-
-                # Configuration
-                st.subheader("⚙️ Configuration")
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    include_emails = st.checkbox("Generate email drafts for qualified leads", value=True)
-
-                with col2:
-                    batch_size = st.selectbox("Batch size (for large datasets)", [1, 5, 10, 25, 50], index=2)
-
-                # Time estimate (initial static, will update dynamically during processing)
-                estimated_time = len(df) * 10.1  # seconds (initial guess)
-                est_minutes = int(estimated_time // 60)
-                est_seconds = int(estimated_time % 60)
-                time_estimate_placeholder = st.empty()
-                time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_minutes}m {est_seconds}s for {len(df)} rows")
-
-                # Process button
-                if st.button("🚀 Start Analysis", type="primary"):
-                    if len(df) == 0:
-                        st.error("No data to process!")
-                    else:
-                        # Processing
-                        st.subheader("🔄 Processing...")
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
-                        results_container = st.empty()
-                        # Use the same placeholder for dynamic time estimate
-                        qual_flags = []
-                        notes_list = []
-                        scores_list = []
-                        email_drafts = []
-                        rationales = []
-                        start_time = time.time()
-                        row_times = []
-                        for idx, row in enumerate(df.itertuples(index=False)):
-                            row_start = time.time()
-                            # Convert row to dict for compatibility
-                            if hasattr(row, '_asdict'):
-                                row_dict = row._asdict()
-                            else:
-                                row_dict = dict(zip(df.columns, row))
-                            status_text.text(f"Processing {idx + 1}/{len(df)}: {row_dict.get('FirstName', 'N/A')} {row_dict.get('LastName', 'N/A')} at {row_dict.get('CompanyName', 'N/A')}")
-                            result = qualify_visitor(row_dict, progress_bar, idx, len(df))
-                            qual_flags.append(result['qualified'])
-                            notes_list.append(result['notes'])
-                            scores_list.append(result['score'])
-                            email_drafts.append(result['email_draft'] if include_emails else "")
-                            rationales.append(result['rationale'])
-                            # Track time for this row
-                            row_time = time.time() - row_start
-                            row_times.append(row_time)
-                            avg_time = sum(row_times) / len(row_times)
-                            rows_left = len(df) - (idx + 1)
-                            est_time_left = avg_time * rows_left
-                            est_minutes = int(est_time_left // 60)
-                            est_seconds = int(est_time_left % 60)
-                            # Replace static estimate with dynamic one
-                            time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)")
-                            # Show live results
-                            qualified_count = sum(qual_flags)
-                            with results_container.container():
-                                col1, col2, col3 = st.columns(3)
-                                col1.metric("Processed", f"{idx + 1}/{len(df)}")
-                                col2.metric("Qualified", qualified_count)
-                                col3.metric("Rate", f"{qualified_count/(idx+1)*100:.1f}%")
-                                if result['qualified']:
-                                    st.success(f"✅ {row_dict.get('FirstName', '')} {row_dict.get('LastName', '')} - QUALIFIED")
-                                    st.write(f"💭 {result['rationale']}")
-                                else:
-                                    st.warning(f"❌ {row_dict.get('FirstName', '')} {row_dict.get('LastName', '')} - Not Qualified")
-                        # Add results to dataframe
-                        df['Qualified'] = qual_flags
-                        df['Notes'] = notes_list
-                        df['Score'] = scores_list
-                        if include_emails:
-                            df['EmailDraft'] = email_drafts
-                        df['Rationale'] = rationales
-                        # Calculate final stats
-                        qualified_count = df['Qualified'].sum()
-                        total_time = time.time() - start_time
-                        # Save to database
-                        analysis_id = save_analysis_results(uploaded_file.name, df)
-                        # Display final results
-                        st.subheader("🎉 Analysis Complete!")
-                        col1, col2, col3, col4 = st.columns(4)
-                        col1.metric("Total Processed", len(df))
-                        col2.metric("Qualified", qualified_count)
-                        col3.metric("Qualification Rate", f"{qualified_count/len(df)*100:.1f}%")
-                        col4.metric("Processing Time", f"{total_time/60:.1f}m")
-                        # Display qualified leads
-                        if qualified_count > 0:
-                            st.subheader("✅ Qualified Leads")
-                            qualified_df = df[df['Qualified'] == True]
-                            for _, row in qualified_df.iterrows():
-                                with st.expander(f"🎯 {row.get('FirstName', '')} {row.get('LastName', '')} - {row.get('CompanyName', '')}"):
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        st.write("**Contact Info:**")
-                                        st.write(f"Name: {row.get('FirstName', '')} {row.get('LastName', '')}")
-                                        st.write(f"Title: {row.get('Title', 'N/A')}")
-                                        st.write(f"Company: {row.get('CompanyName', 'N/A')}")
-                                        st.write(f"Industry: {row.get('Industry', 'N/A')}")
-                                        st.write(f"Email: {row.get('Email', 'N/A')}")
-                                        st.write(f"Score: {row.get('Score', 'N/A')}/10")
-                                    with col2:
-                                        if include_emails and row.get('EmailDraft'):
-                                            st.write("**Draft Email:**")
-                                            st.text_area("", value=row.get('EmailDraft', ''), height=100, key=f"email_{row.name}")
-                                    st.write("**Qualification Rationale:**")
-                                    st.write(row.get('Rationale', 'No rationale available'))
-                        # Download results
-                        csv_buffer = StringIO()
-                        df.to_csv(csv_buffer, index=False)
-                        st.download_button(
-                            label="📥 Download Results CSV",
-                            data=csv_buffer.getvalue(),
-                            file_name=f"qualified_leads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                            mime="text/csv"
-                        )
             except Exception as e:
                 st.error(f"Error processing file: {str(e)}")
                 print(f"Error processing file: {str(e)}")
         # Save print log to session state
         st.session_state['print_log_buffer'].write(print_buffer.getvalue())
+
+        # Always show preview, row selection, and config
+        if 'df' in locals():
+            st.subheader("📋 Data Preview")
+            st.dataframe(df.head(10))
+
+            st.subheader("🎯 Select Rows to Process")
+            col1, col2 = st.columns(2)
+            with col1:
+                process_all = st.checkbox("Process all rows", value=True)
+            if not process_all:
+                with col2:
+                    selected_rows = st.multiselect(
+                        "Select specific rows (by index)",
+                        options=list(range(len(df))),
+                        default=list(range(min(10, len(df))))
+                    )
+                    df = df.iloc[selected_rows].reset_index(drop=True)
+
+            st.subheader("⚙️ Configuration")
+            col1, col2 = st.columns(2)
+            with col1:
+                include_emails = st.checkbox("Generate email drafts for qualified leads", value=True)
+            with col2:
+                batch_size = st.selectbox("Batch size (for large datasets)", [1, 5, 10, 25, 50], index=2)
+
+            estimated_time = len(df) * 10.1  # seconds (initial guess)
+            est_minutes = int(estimated_time // 60)
+            est_seconds = int(estimated_time % 60)
+            time_estimate_placeholder = st.empty()
+            time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_minutes}m {est_seconds}s for {len(df)} rows")
+
+            # Process button
+            if st.button("🚀 Start Analysis", type="primary"):
+                if len(df) == 0:
+                    st.error("No data to process!")
+                else:
+                    # Processing
+                    st.subheader("🔄 Processing...")
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    results_container = st.empty()
+                    # Use the same placeholder for dynamic time estimate
+                    qual_flags = []
+                    notes_list = []
+                    scores_list = []
+                    email_drafts = []
+                    rationales = []
+                    start_time = time.time()
+                    row_times = []
+                    for idx, row in enumerate(df.itertuples(index=False)):
+                        row_start = time.time()
+                        # Convert row to dict for compatibility
+                        if hasattr(row, '_asdict'):
+                            row_dict = row._asdict()
+                        else:
+                            row_dict = dict(zip(df.columns, row))
+                        status_text.text(f"Processing {idx + 1}/{len(df)}: {row_dict.get('FirstName', 'N/A')} {row_dict.get('LastName', 'N/A')} at {row_dict.get('CompanyName', 'N/A')}")
+                        result = qualify_visitor(row_dict, progress_bar, idx, len(df))
+                        qual_flags.append(result['qualified'])
+                        notes_list.append(result['notes'])
+                        scores_list.append(result['score'])
+                        email_drafts.append(result['email_draft'] if include_emails else "")
+                        rationales.append(result['rationale'])
+                        # Track time for this row
+                        row_time = time.time() - row_start
+                        row_times.append(row_time)
+                        avg_time = sum(row_times) / len(row_times)
+                        rows_left = len(df) - (idx + 1)
+                        est_time_left = avg_time * rows_left
+                        est_minutes = int(est_time_left // 60)
+                        est_seconds = int(est_time_left % 60)
+                        # Replace static estimate with dynamic one
+                        time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)")
+                        # Show live results
+                        qualified_count = sum(qual_flags)
+                        with results_container.container():
+                            col1, col2, col3 = st.columns(3)
+                            col1.metric("Processed", f"{idx + 1}/{len(df)}")
+                            col2.metric("Qualified", qualified_count)
+                            col3.metric("Rate", f"{qualified_count/(idx+1)*100:.1f}%")
+                            if result['qualified']:
+                                st.success(f"✅ {row_dict.get('FirstName', '')} {row_dict.get('LastName', '')} - QUALIFIED")
+                                st.write(f"💭 {result['rationale']}")
+                            else:
+                                st.warning(f"❌ {row_dict.get('FirstName', '')} {row_dict.get('LastName', '')} - Not Qualified")
+                    # Add results to dataframe
+                    df['Qualified'] = qual_flags
+                    df['Notes'] = notes_list
+                    df['Score'] = scores_list
+                    if include_emails:
+                        df['EmailDraft'] = email_drafts
+                    df['Rationale'] = rationales
+                    # Calculate final stats
+                    qualified_count = df['Qualified'].sum()
+                    total_time = time.time() - start_time
+                    # Save to database
+                    analysis_id = save_analysis_results(uploaded_file.name, df)
+                    # Display final results
+                    st.subheader("🎉 Analysis Complete!")
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("Total Processed", len(df))
+                    col2.metric("Qualified", qualified_count)
+                    col3.metric("Qualification Rate", f"{qualified_count/len(df)*100:.1f}%")
+                    col4.metric("Processing Time", f"{total_time/60:.1f}m")
+                    # Display qualified leads
+                    if qualified_count > 0:
+                        st.subheader("✅ Qualified Leads")
+                        qualified_df = df[df['Qualified'] == True]
+                        for _, row in qualified_df.iterrows():
+                            with st.expander(f"🎯 {row.get('FirstName', '')} {row.get('LastName', '')} - {row.get('CompanyName', '')}"):
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.write("**Contact Info:**")
+                                    st.write(f"Name: {row.get('FirstName', '')} {row.get('LastName', '')}")
+                                    st.write(f"Title: {row.get('Title', 'N/A')}")
+                                    st.write(f"Company: {row.get('CompanyName', 'N/A')}")
+                                    st.write(f"Industry: {row.get('Industry', 'N/A')}")
+                                    st.write(f"Email: {row.get('Email', 'N/A')}")
+                                    st.write(f"Score: {row.get('Score', 'N/A')}/10")
+                                with col2:
+                                    if include_emails and row.get('EmailDraft'):
+                                        st.write("**Draft Email:**")
+                                        st.text_area("", value=row.get('EmailDraft', ''), height=100, key=f"email_{row.name}")
+                                st.write("**Qualification Rationale:**")
+                                st.write(row.get('Rationale', 'No rationale available'))
+                    # Download results
+                    csv_buffer = StringIO()
+                    df.to_csv(csv_buffer, index=False)
+                    st.download_button(
+                        label="📥 Download Results CSV",
+                        data=csv_buffer.getvalue(),
+                        file_name=f"qualified_leads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
 
 elif page == "View Past Results":
     st.title("📈 Past Analysis Results")
