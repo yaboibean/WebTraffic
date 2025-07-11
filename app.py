@@ -393,6 +393,16 @@ Very formal!
 init_database()
 
 # Sidebar navigation
+debug_log = []
+show_debug = st.sidebar.checkbox("Show Debug Log", value=False)
+    if show_debug:
+        debug_log.append(f"Saving analysis results for {filename} with {len(df)} rows.")
+    if show_debug:
+        debug_log.append("Retrieving past analyses from database.")
+    if show_debug:
+        debug_log.append(f"Getting qualified visitors for analysis_id={analysis_id}.")
+    if show_debug:
+        debug_log.append(f"Qualifying visitor {row.get('FirstName', '')} {row.get('LastName', '')} at {row.get('CompanyName', '')} [{current_idx+1}/{total_count}]")
 st.sidebar.title("🚀 InstaLILY Lead Qualification")
 page = st.sidebar.selectbox("Choose Action", ["Upload CSV & Analyze", "View Past Results"])
 
@@ -409,6 +419,8 @@ if page == "Upload CSV & Analyze":
     
     if uploaded_file is not None:
         try:
+            if show_debug:
+                debug_log.append(f"Loaded {len(df)} rows from {uploaded_file.name}")
             # Read CSV
             df = pd.read_csv(uploaded_file)
             st.success(f"✅ Loaded {len(df)} rows from {uploaded_file.name}")
@@ -476,6 +488,8 @@ if page == "Upload CSV & Analyze":
                         else:
                             row_dict = dict(zip(df.columns, row))
                         status_text.text(f"Processing {idx + 1}/{len(df)}: {row_dict.get('FirstName', 'N/A')} {row_dict.get('LastName', 'N/A')} at {row_dict.get('CompanyName', 'N/A')}")
+                        if show_debug:
+                            debug_log.append(f"Processing row {idx+1}: {row_dict}")
                         result = qualify_visitor(row_dict, progress_bar, idx, len(df))
                         qual_flags.append(result['qualified'])
                         notes_list.append(result['notes'])
@@ -556,6 +570,10 @@ if page == "Upload CSV & Analyze":
                     
         except Exception as e:
             st.error(f"Error processing file: {str(e)}")
+            if show_debug:
+                debug_log.append(f"Error processing file: {str(e)}")
+    if show_debug:
+        debug_log.append("Viewing past results page.")
 
 elif page == "View Past Results":
     st.title("📈 Past Analysis Results")
@@ -594,9 +612,15 @@ elif page == "View Past Results":
         )
         
         if selected_analysis:
+            if show_debug:
+                debug_log.append(f"Selected analysis ID: {selected_analysis}")
             qualified_visitors = get_qualified_visitors(selected_analysis)
             
             if len(qualified_visitors) == 0:
+                if show_debug:
+                    debug_log.append("No qualified visitors found for this analysis.")
+                if show_debug:
+                    debug_log.append(f"Displaying {len(qualified_visitors)} qualified visitors.")
                 st.info("No qualified visitors found for this analysis.")
             else:
                 st.write(f"**{len(qualified_visitors)} Qualified Leads:**")
@@ -643,5 +667,10 @@ elif page == "View Past Results":
                 )
 
 # Footer
+# Show debug log if enabled
+if show_debug:
+    st.markdown("---")
+    st.markdown("### Debug Log")
+    st.text_area("", value="\n".join(debug_log), height=300)
 st.markdown("---")
 st.markdown("Potential Lead Qualification | InstaLILY 2025")
