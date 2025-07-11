@@ -559,12 +559,15 @@ if page == "Upload CSV & Analyze":
                 process_all = st.checkbox("Process all rows", value=True)
             if not process_all:
                 with col2:
+                    # Show spreadsheet-style row numbers (starting from 1)
+                    row_numbers = list(range(1, len(df) + 1))
                     selected_rows = st.multiselect(
-                        "Select specific rows (by index)",
-                        options=list(range(len(df))),
-                        default=list(range(min(10, len(df))))
+                        "Select specific rows (spreadsheet row number, starting from 1)",
+                        options=row_numbers,
+                        default=row_numbers[:min(10, len(df))]
                     )
-                    df = df.iloc[selected_rows].reset_index(drop=True)
+                    # Subtract 1 to convert to DataFrame index
+                    df = df.iloc[[i - 1 for i in selected_rows]].reset_index(drop=True)
 
             st.subheader("⚙️ Configuration")
             col1, col2 = st.columns(2)
@@ -574,10 +577,14 @@ if page == "Upload CSV & Analyze":
                 batch_size = st.selectbox("Batch size (for large datasets)", [1, 5, 10, 25, 50], index=2)
 
             estimated_time = len(df) * 10.1  # seconds (initial guess)
-            est_minutes = int(estimated_time // 60)
+            est_hours = int(estimated_time // 3600)
+            est_minutes = int((estimated_time % 3600) // 60)
             est_seconds = int(estimated_time % 60)
             time_estimate_placeholder = st.empty()
-            time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_minutes}m {est_seconds}s for {len(df)} rows")
+            if estimated_time >= 3600:
+                time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_hours}h {est_minutes}m {est_seconds}s for {len(df)} rows")
+            else:
+                time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_minutes}m {est_seconds}s for {len(df)} rows")
 
             # Process button
             if st.button("🚀 Start Analysis", type="primary"):
@@ -617,10 +624,14 @@ if page == "Upload CSV & Analyze":
                         avg_time = sum(row_times) / len(row_times)
                         rows_left = len(df) - (idx + 1)
                         est_time_left = avg_time * rows_left
-                        est_minutes = int(est_time_left // 60)
+                        est_hours = int(est_time_left // 3600)
+                        est_minutes = int((est_time_left % 3600) // 60)
                         est_seconds = int(est_time_left % 60)
                         # Replace static estimate with dynamic one
-                        time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)")
+                        if est_time_left >= 3600:
+                            time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_hours}h {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)")
+                        else:
+                            time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)")
                         # Show live results
                         qualified_count = sum(qual_flags)
                         with results_container.container():
