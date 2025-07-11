@@ -21,28 +21,7 @@ load_dotenv(override=True)
 # Print Capture Utilities #
 ###########################
 
-class PrintCapture(io.StringIO):
-    """Capture all print statements to a buffer."""
-    def __init__(self):
-        super().__init__()
-        self.lock = threading.Lock()
-    def write(self, s):
-        with self.lock:
-            super().write(s)
-    def getvalue(self):
-        with self.lock:
-            return super().getvalue()
 
-@contextmanager
-def capture_prints():
-    """Context manager to capture all prints to a buffer."""
-    old_stdout = sys.stdout
-    buffer = PrintCapture()
-    sys.stdout = buffer
-    try:
-        yield buffer
-    finally:
-        sys.stdout = old_stdout
 
 # Page config
 st.set_page_config(
@@ -535,15 +514,9 @@ init_database()
 
 # Sidebar navigation
 
-# Print log toggle
-show_print_log = st.sidebar.checkbox("Show Print Log (Terminal Output)", value=False)
+
 st.sidebar.title("🚀 InstaLILY Lead Qualification")
 page = st.sidebar.selectbox("Choose Action", ["Upload CSV & Analyze", "View Past Results"])
-
-print_log_buffer = st.session_state.get('print_log_buffer', None)
-if print_log_buffer is None:
-    print_log_buffer = PrintCapture()
-    st.session_state['print_log_buffer'] = print_log_buffer
 
 if page == "Upload CSV & Analyze":
     st.title("📊 Lead Qualification Analysis")
@@ -556,19 +529,14 @@ if page == "Upload CSV & Analyze":
         help="Upload a CSV file containing visitor data with columns like FirstName, LastName, Title, CompanyName, Industry, etc."
     )
     
+
     if uploaded_file is not None:
-        # Capture all prints in this block
-        with capture_prints() as print_buffer:
-            try:
-                # Read CSV
-                df = pd.read_csv(uploaded_file)
-                print(f"Loaded {len(df)} rows from {uploaded_file.name}")
-                st.success(f"✅ Loaded {len(df)} rows from {uploaded_file.name}")
-            except Exception as e:
-                st.error(f"Error processing file: {str(e)}")
-                print(f"Error processing file: {str(e)}")
-        # Save print log to session state
-        st.session_state['print_log_buffer'].write(print_buffer.getvalue())
+        try:
+            # Read CSV
+            df = pd.read_csv(uploaded_file)
+            st.success(f"✅ Loaded {len(df)} rows from {uploaded_file.name}")
+        except Exception as e:
+            st.error(f"Error processing file: {str(e)}")
 
 
         # Show CSV preview, then row selection and config
@@ -743,25 +711,20 @@ elif page == "View Past Results":
         )
         
         if selected_analysis:
-            with capture_prints() as print_buffer:
-                qualified_visitors = get_qualified_visitors(selected_analysis)
-                if len(qualified_visitors) == 0:
-                    st.info("No qualified visitors found for this analysis.")
-                else:
-                    st.write(f"**{len(qualified_visitors)} Qualified Leads:**")
-            st.session_state['print_log_buffer'].write(print_buffer.getvalue())
-            
+            qualified_visitors = get_qualified_visitors(selected_analysis)
+            if len(qualified_visitors) == 0:
+                st.info("No qualified visitors found for this analysis.")
+            else:
+                st.write(f"**{len(qualified_visitors)} Qualified Leads:**")
             # Summary metrics
             col1, col2, col3 = st.columns(3)
             col1.metric("Qualified Leads", len(qualified_visitors))
             col2.metric("Avg Score", f"{qualified_visitors['qualification_score'].mean():.1f}/10")
             col3.metric("Industries", qualified_visitors['industry'].nunique())
-            
             # Display qualified visitors
             for _, visitor in qualified_visitors.iterrows():
                 with st.expander(f"🎯 {visitor['first_name']} {visitor['last_name']} - {visitor['company_name']}"):
                     col1, col2 = st.columns(2)
-                    
                     with col1:
                         st.write("**Contact Information:**")
                         st.write(f"**Name:** {visitor['first_name']} {visitor['last_name']}")
@@ -771,20 +734,16 @@ elif page == "View Past Results":
                         st.write(f"**Email:** {visitor['email']}")
                         st.write(f"**Website:** {visitor['website']}")
                         st.write(f"**Score:** {visitor['qualification_score']}/10")
-                    
                     with col2:
                         if visitor['email_draft']:
                             st.write("**Email Draft:**")
                             st.text_area("", value=visitor['email_draft'], height=150, key=f"past_email_{visitor['id']}")
-                    
                     if visitor['notes']:
                         st.write("**Full Analysis:**")
                         st.text_area("", value=visitor['notes'], height=200, key=f"notes_{visitor['id']}")
-            
             # Export qualified leads
             csv_buffer = StringIO()
             qualified_visitors.to_csv(csv_buffer, index=False)
-            
             st.download_button(
                 label="📥 Download Qualified Leads CSV",
                 data=csv_buffer.getvalue(),
@@ -793,10 +752,5 @@ elif page == "View Past Results":
             )
 
 # Footer
-# Show print log if enabled
-if show_print_log:
-    st.markdown("---")
-    st.markdown("### Terminal Output (Print Log)")
-    st.text_area("", value=st.session_state['print_log_buffer'].getvalue(), height=300)
 st.markdown("---")
 st.markdown("Potential Lead Qualification | InstaLILY 2025")
