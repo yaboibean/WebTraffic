@@ -466,10 +466,12 @@ if page == "Upload CSV & Analyze":
                     rationales = []
                     start_time = time.time()
                     row_times = []
-                    for idx, row in df.iterrows():
+                    for idx, row in enumerate(df.itertuples(index=False)):
                         row_start = time.time()
-                        status_text.text(f"Processing {idx + 1}/{len(df)}: {row.get('FirstName', 'N/A')} {row.get('LastName', 'N/A')} at {row.get('CompanyName', 'N/A')}")
-                        result = qualify_visitor(row, progress_bar, idx, len(df))
+                        # Convert row to dict for compatibility
+                        row_dict = row._asdict() if hasattr(row, '_asdict') else dict(row)
+                        status_text.text(f"Processing {idx + 1}/{len(df)}: {row_dict.get('FirstName', 'N/A')} {row_dict.get('LastName', 'N/A')} at {row_dict.get('CompanyName', 'N/A')}")
+                        result = qualify_visitor(row_dict, progress_bar, idx, len(df))
                         qual_flags.append(result['qualified'])
                         notes_list.append(result['notes'])
                         scores_list.append(result['score'])
@@ -480,9 +482,11 @@ if page == "Upload CSV & Analyze":
                         row_times.append(row_time)
                         avg_time = sum(row_times) / len(row_times)
                         rows_left = len(df) - (idx + 1)
-                        est_time_left = int(avg_time * rows_left)
-                        # Update dynamic time estimate
-                        time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_time_left // 60}m {est_time_left % 60}s (avg {avg_time:.1f}s/row, {rows_left} left)")
+                        est_time_left = avg_time * rows_left
+                        est_minutes = int(est_time_left // 60)
+                        est_seconds = int(est_time_left % 60)
+                        # Update dynamic time estimate with rounded values
+                        time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_minutes}m {est_seconds}s (avg {avg_time:.1f}s/row, {rows_left} left)")
                         # Show live results
                         qualified_count = sum(qual_flags)
                         with results_container.container():
@@ -491,10 +495,10 @@ if page == "Upload CSV & Analyze":
                             col2.metric("Qualified", qualified_count)
                             col3.metric("Rate", f"{qualified_count/(idx+1)*100:.1f}%")
                             if result['qualified']:
-                                st.success(f"✅ {row.get('FirstName', '')} {row.get('LastName', '')} - QUALIFIED")
+                                st.success(f"✅ {row_dict.get('FirstName', '')} {row_dict.get('LastName', '')} - QUALIFIED")
                                 st.write(f"💭 {result['rationale']}")
                             else:
-                                st.warning(f"❌ {row.get('FirstName', '')} {row.get('LastName', '')} - Not Qualified")
+                                st.warning(f"❌ {row_dict.get('FirstName', '')} {row_dict.get('LastName', '')} - Not Qualified")
                     # Add results to dataframe
                     df['Qualified'] = qual_flags
                     df['Notes'] = notes_list
