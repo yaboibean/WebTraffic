@@ -13,7 +13,6 @@ import threading
 from contextlib import contextmanager
 import io
 from io import StringIO
-from openai import OpenAI
 
 ###########################
 # Print Capture Utilities #
