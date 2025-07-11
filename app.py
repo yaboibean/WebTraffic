@@ -15,7 +15,7 @@ import io
 from io import StringIO
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 ###########################
 # Print Capture Utilities #
@@ -56,6 +56,10 @@ st.set_page_config(
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
 PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+# Warn if keys are missing
+if not PERPLEXITY_API_KEY or not OPENAI_API_KEY:
+    st.warning("One or more API keys are missing. Please ensure PERPLEXITY_API_KEY and OPENAI_API_KEY are set in your .env file and restart the app.")
 
 # Database setup
 def init_database():
@@ -250,11 +254,7 @@ def qualify_visitor(row, progress_bar, current_idx, total_count):
     website = row.get('Website', 'N/A')
     
     qualification_prompt = f"""
-As you research, you will visit the following websites and sources:
-- Company website: {website if is_valid_data(website) else 'Not available'}
-- Google searches for company news and background
-- Professional profile verification
-- Industry analysis sources
+
 
 CURRENT RESEARCH TARGET:
 {company}{f' in {industry}' if is_valid_data(industry) else ''}
@@ -267,6 +267,7 @@ Be aware of the intent of the visitor, and put it into 3 categories: Investor, s
 
 Visitor Details from RB2B:
 {visitor_details_text}
+
 
 Just a few of the industries that InstaLILY likes to work with are: Healthcare Distribution, Industrial/Construction/Distribution, Automotive (OEM/Fleet/Parts), Food & Beverage Distribution, and PE Operating roles. These are ideals, not requirements. These are just the top industries we are targeting, but we are more than open to other industries if the visitor meets the other criteria. Don't place too much negative weight on the industry, this means that if the industry does not line up, don't dock too many points, but if it does line up, give a lot of points. All of these are very broad, and can be interpreted in many ways, so use your best judgement to determine if the visitor is a good fit for InstaLILY.
 
@@ -319,6 +320,8 @@ You should aim to qualify between 25 and 35% of the visitors.
 
 Do not include citations!
 
+Remember, someone visiting the website could be from InstaLILY, in which case they would obviously not be qualified.
+
 Make sure you start with either a "Yes" or a "No" indicating whether or not the person and company is qualified. If they are qualified, say "Yes" as the first words, and if they are not, say "No"
 
 Finally, If you select someone, you should be 100% confident that they could work well with InstaLILY and align well with what we do. The more people that we can qualify the better.
@@ -333,7 +336,113 @@ Also keep in mind that for a little company, they might not be able to afford In
 
 Even if a company is big and might have access to AI, they might still be a good fit for InstaLILY. The name of the game is that we wont know unless we talk to them, so the more we can qualify, the better. But with that said, we dont want to waste time on people that are not a good fit, so be very thorough in your analysis.
 
+The following were all qualified visitors, so you can use them as examples of what a qualified visitor looks like. Study them very carefully and make sure you understand what makes each of them qualified. When in doubt, you can refer back to these examples to help you make your decision. Try and identify a pattern amongst the following
+
+LinkedInUrl	FirstName	LastName	Title	CompanyName	AllTimePageViews	WorkEmail	Website	Industry	Qualified?
+https://www.linkedin.com/in/aolar	Amanda	Hazer	Next-Quarter Coach for Women Athletes	amanda hazer consulting llc	4	olara2587@gmail.com	https://knft.com		Qualified
+https://www.linkedin.com/in/amitmenghani	Amit	Menghani	Director of Software Engineering	capital one	2	amitsopinion@gmail.com	http://www.capitalone.com	Finance and Banking	Qualified
+https://www.linkedin.com/in/ben-jablow-20854	Ben	Jablow	CEO	Romify	1	ben@rupt.com	https://www.rupt.com		Qualified
+https://www.linkedin.com/in/bretthughes6	Brett	Hughes	Chief Operating Officer	studionow	1	brett@empactfulcapital.com	https://studionow.com	Media and Publishing	Qualified
+https://www.linkedin.com/in/caley-kovler	Caley	Kovler	Director, Consumer Insights	starz	1	caley.kovler@starz.com	http://www.starz.com/	Creative Arts and Entertainment	Qualified
+https://www.linkedin.com/in/chad-goldman-57905a31/	Chad	Goldman	Manager, Direct Container Division at Jofran, Inc.		3	chadgoldman@comcast.net			Qualified
+https://www.linkedin.com/in/colliersearle	Collier	Searle	Board Member	ORTEC	13		https://ortec.com		Qualified
+https://www.linkedin.com/in/davidyoh2	David	Yoh		toast	1	david.yoh@toasttab.com	http://pos.toasttab.com	Information Technology	Qualified
+https://www.linkedin.com/in/davidspiegelman	David	Spiegelman	Founder	manta creative	8	david@mantacreative.com	https://www.mantacreative.com	Marketing & Advertising	Qualified
+https://www.linkedin.com/in/don-macagba	Don King	Macagba	Site Manager	arx networks	9	dmacagba@arxnetworks.com	http://www.arxnetworks.com	Information Technology	Qualified
+https://www.linkedin.com/in/hsuelaine	Elaine	Hsu	Head Of Operations	planet fwd	52	elaine@planetfwd.com	http://planetfwd.com	Information Technology	Qualified
+https://www.linkedin.com/in/emilio-mel-smith-b2636749	Emilio Mel	Smith	Assistant Superintendent, Commercial Tennant Improvement Construction	novo construction, inc.	3	mstrag83@hotmail.com	http://www.novoconstruction.com/	Construction	Qualified
+https://www.linkedin.com/in/emmanuelebwe	Emmanuel	Ebwe			2	etikwe@hotmail.com	https://takomatherapy.com		Qualified
+https://www.linkedin.com/in/erin-fischell-6562303a	Erin	Fischell	Founder	acbotics research llc	6	efischell@jpanalytics.com	https://hartelrealty.com		Qualified
+https://www.linkedin.com/in/jason-lionetti-058777121	Jason	Lionetti	Operational Specialist	cb2	1	jasonlionetti702@gmail.com	http://www.cb2.com	Retail	Qualified
+https://www.linkedin.com/in/jasontell	Jason	Tell	Chief User Experience Officer	Modern Climate	4	jtell@modernclimate.com	https://modernclimate.com/	Marketing & Advertising	Qualified
+https://www.linkedin.com/in/jeff-stuart-b8899611	Jeff	Stuart	Managing Director	berkadia	1	jeff.stuart@berkadia.com	http://www.berkadia.com	Finance and Banking	Qualified
+https://www.linkedin.com/in/jennifer-whitaker-41394bb7	Jennifer	Whitaker	Director of Engineering and Maintenance	rivanna water and sewer authority	1	jwhitaker@rivanna.org	http://rivanna.org	Professional and Business Services	Qualified
+https://www.linkedin.com/in/jim-mackinnon-aa35032a	Jim	MacKinnon	Director International Sales	yaskawa america, inc. -  drives & motion division	1	jim_mackinnon@yaskawa.com	https://www.yaskawa.com	Manufacturing	Qualified
+https://www.linkedin.com/in/joby-peter-08833a4	Joby	Peter	Engineering Manager	amd	1	joby.peter@amd.com	http://www.amd.com	Manufacturing	Qualified
+https://www.linkedin.com/in/john-desena	John	DeSena	Co-Chief Operating Officer, Shared Services	b. riley financial	2	jdesena@brileyfin.com	https://brileyfin.com/	Finance and Banking	Qualified
+https://www.linkedin.com/in/jon-glascoe-60512551	jon	glascoe	Co-Founder	cypress films	2	jonglascoe@rocketmail.com	https://goo.gle		Qualified
+https://www.linkedin.com/in/karina-iturralde	Karina	Iturralde	Public Relations Assistant Account Executive	inkhouse	1	karina@inkhouse.com	http://www.inkhouse.com	Marketing & Advertising	Qualified
+https://www.linkedin.com/in/kasey-homa	Kasey	Homa	Global Product Strategy & Development	capital group	1	kasey.homa@capgroup.com	https://www.capitalgroup.com/us/landing-pages/linkedin-terms-of-use.html	Finance and Banking	Qualified
+https://www.linkedin.com/in/keri-lartz	Keri	Lartz	Director Of Operations	the rave agency	2	keri@theraveagency.com	https://theraveagency.com	Marketing & Advertising	Qualified
+https://www.linkedin.com/in/lissette-gonzalez-83253b54	lissette	Gonzalez	Principle administrator	city of new york, department of homeless services	3	kevlissette@hotmail.com	https://bcfs.net		Qualified
+https://www.linkedin.com/in/marissazehnder	Marissa	Zehnder	National Account Executive	justworks	5	marissa@justworks.com	https://www.justworks.com/lp/what-is-justworks/?utm_source=linkedin&utm_medium=organicsocial	Professional and Business Services	Qualified
+https://www.linkedin.com/in/michael-dorfman	Michael	Dorfman		pro padel league	4	mdorfman15@gmail.com	https://propadelleague.com	Tourism and Hospitality	Qualified
+https://www.linkedin.com/in/muthukumar-easwaran-8081863	Muthukumar	Easwaran	Senior Vice President -  Digital/Data, Product and Technology Platforms	neighborly®	1	muthukumar.easwaran@neighborlybrands.com	https://www.neighborlybrands.com/	Professional and Business Services	Qualified
+https://www.linkedin.com/in/nhansch	Neal	Hansch		Silicon Foundry	1	neal@sifoundry.com	http://www.sifoundry.com		Qualified
+https://www.linkedin.com/in/nil-timor	Nil	Timor		jwp connatix	2	nil@jwplayer.com	https://jwpconnatix.com	Information Technology	Qualified
+https://www.linkedin.com/in/paul-donahue-a3048166	Paul	Donahue	Vice President	salem capital management	1	paul@salemcap.com	http://www.salemcap.com	Finance and Banking	Qualified
+https://www.linkedin.com/in/peter-higgins-516a3133	Peter	Higgins	Chief Operating Officer	salt lake city department of airports	3	petehiggs_slc@hotmail.com	https://slcgov.com		Qualified
+https://www.linkedin.com/in/phillippoinsatte	Phillip	Poinsatte	President / Owner	global recruiters of boston south (grn)	6	p325ic@aol.com	http://www.globalrecruitersbostonsouth.com	Professional and Business Services	Qualified
+https://www.linkedin.com/in/raghava-sreenivasan-183b9b295	Raghava	Sreenivasan	Vice President - Site Reliability Engineer/DevOps Lead	JPMorgan Chase & Co.	2		https://marquisspas.com	Financial Services	Qualified
+https://www.linkedin.com/in/rahulkaitheri	Rahul	Kaitheri		lowe's companies, inc.	1	rahul.kaitheri@lowes.com	https://talent.lowes.com	Retail	Qualified
+https://www.linkedin.com/in/robert-mahoney-17ba223	Robert	Mahoney	Founder	Has founded a variety of interesting companies.	24	bobbymahoney@gmail.com	https://linktr.ee/csufofficial	Education	Qualified
+https://www.linkedin.com/in/ronald-volans	Ron	Volans	Head of North America Janssen Deliver	Johnson & Johnson	1		https://pwc.com		Qualified
+https://www.linkedin.com/in/ron-delyons-3127711b8	Ron	DeLyons	Chief Executive Officer	creekwood energy partners	1				Qualified
+https://www.linkedin.com/in/ryanstone-nyc	Ryan	Stone		teva pharmaceuticals	5	bigsquirm4@cs.com	http://www.tevapharm.com	Health and Pharmaceuticals	Qualified
+https://www.linkedin.com/in/sjyork	Sarah	York	Director, Stores & Corporate Marketing Strategy	Macy's	1	sjyork@suffolk.edu	http://www.macysjobs.com?rx_source=linkedincompanypage	Retail	Qualified
+https://www.linkedin.com/in/saroj-adhikari-1aa99020	Saroj	Adhikari	Leader, Data Engineering Team	success academy charter schools	1	saroj.adhikari@successacademies.org	http://jobs.successacademies.org	Education	Qualified
+https://www.linkedin.com/in/shannon-moman-a1261216	Shannon	Moman	Director of Sales Support	r & s northeast	4	smoman@rsnortheast.com	http://www.rsnortheast.com	Health and Pharmaceuticals	Qualified
+https://www.linkedin.com/in/laiyzhang	Teri	Zhang	Associate Media Director	zenith	5	teri.zhang@zenithmedia.com	http://www.zenithmedia.com	Marketing & Advertising	Qualified
+https://www.linkedin.com/in/theresa-cullinan-caulfield-27886955	Theresa	Cullinan Caulfield	Senior Director Human Resources	prager & company	2	theresa.caulfield@prager.com	http://www.prager.com	Finance and Banking	Qualified
+https://www.linkedin.com/in/thomas-minetti-414a449	Thomas	Minetti	Home Improvement Contractor	home improvement contractor	2	tminetti@primeres.com	https://capitalremodeling.com	Construction	Qualified
+https://www.linkedin.com/in/thomas-knight-1a563915	Thomas	Knight	Owner	toyon associates, inc	1	tom.knight@toyonassociates.com	https://sigsauer.com		Qualified
+https://www.linkedin.com/in/xiaoying-su-580ab0224	Xiaoying	Su	Director	Echoes Films	22	xsu2@sva.edu		Media Production	Qualified
+https://www.linkedin.com/company/inovahealth				Inova Health	2		https://inova.org	Health and Pharmaceuticals	Qualified
+https://www.linkedin.com/company/atkinson-andelson-loya-ruud-&-romo				Atkinson, Andelson, Loya, Ruud & Romo	3		https://aalrr.com	Professional and Business Services	Qualified
+https://www.linkedin.com/company/bearings-specialty-co--inc-				Bearings Specialty, Co. Inc.	1		https://bearings-specialty.com	Manufacturing	Qualified
+https://www.linkedin.com/company/potrero-medical				Potrero Medical	2		https://potreromed.com	Manufacturing	Qualified
+https://www.linkedin.com/company/cornell-cooperative-extension-of-genesee-county				Cornell Cooperative Extension of Genesee County	6		https://cornell.edu	Non-Profit and Social Services	Qualified
+
+
+
+The following is an example of a disqualified visitor. Use these as examples of what a disqualified visitor looks like. When in doubt, you can refer back to these examples to help you make your decision. Try and recognize patternes amongst the following:
+
+LinkedInUrl	FirstName	LastName	Title	CompanyName	AllTimePageViews	WorkEmail	Website	Industry
+https://www.linkedin.com/in/tina-laforgia-014b2233	Tina	LaForgia	Senior Accountant	guidemark health	28	tlaforgia@guidemarkhealth.com	https://guidemarkhealth.com	Marketing & Advertising
+http://www.linkedin.com/in/alison-burton-95095840	Alison	Burton	Floater Executive Assistant	KKR	13	alison.burton@kkr.com	http://www.kkr.com	Financial Services
+https://www.linkedin.com/in/james-bush-68a73779	James	Bush			12			
+https://www.linkedin.com/company/care-plus-nj				Care Plus NJ	27		https://careplusnj.org	Non-Profit and Social Services
+https://www.linkedin.com/in/ivan-samayoa-32213b31	Ivan	Samayoa		UpCrunch	4	ivane.samayoa@gmail.com	http://www.upcrunch.com	
+https://www.linkedin.com/in/alexazhao	Zhen	Zhao	Marketing Professional		2	alexzhao49@gmail.com	https://shanda.com	Internet
+https://www.linkedin.com/in/christinakaney	Christina	Kaney	Growth Manager	definity first	6	ckaney3@gmail.com	http://www.definityfirst.com	Information Technology
+https://www.linkedin.com/in/geoff-hippenstiel-1b01382a	Geoff	Hippenstiel			8	ghippen@hotmail.com	https://mountsinai.org	
+https://www.linkedin.com/in/qiaoxin-lin-profile	Vicky	L.	Summer Analyst	ubs	22	qiaoxinlin00@gmail.com	http://www.ubs.com/about	Finance and Banking
+https://www.linkedin.com/in/rajeevkrai	Rajeev	Rai	Chief Information Technology Officer	groundworks	50	rajeev.rai@srsdistribution.com	https://www.groundworks.com/	Construction
+https://www.linkedin.com/in/danayou	Dana	You	AI/ML Engineer	instalily ai	76		https://www.instalily.ai/	Information Technology
+https://www.linkedin.com/company/mount-vernon-seventh-day-adventist-church				MOUNT VERNON SEVENTH-DAY ADVENTIST CHURCH	4		https://mtvernonsda.org	Non-Profit and Social Services
+https://www.linkedin.com/in/fern-coleman-57374747	Fern	Coleman	Senior Insight Consultant	Bryter	86	fern.coleman@bryter-uk.com	https://bryter-global.com	
+https://www.linkedin.com/company/silverline-realty-group				Silverline Realty Group	79		https://slrgrp.com	Real Estate
+https://www.linkedin.com/in/brady-barksdale	Brady	Barksdale		lumeus.ai	19	jbbarksdale@gmail.com	http://lumeus.ai	Information Technology
+https://www.linkedin.com/in/ronan-nayak	Ronan	Nayak			4		https://3ds.com	
+https://www.linkedin.com/in/lisa-lapusata-48072573	Lisa	LaPusata	Director	bright horizons	8	bev@brighthorizons.com	http://www.brighthorizons.com	Education
+https://www.linkedin.com/company/jpmorganassetmanagement				J.P. Morgan Asset Management	7		https://jpmorgan.com	Finance and Banking
+https://www.linkedin.com/company/argand-partners				Argand Partners	2		https://argandequity.com	Finance and Banking
+https://www.linkedin.com/company/mpiphp				Motion Picture Industry Pension & Health Plans	2		https://mpiphp.org	Creative Arts and Entertainment
+https://www.linkedin.com/company/mongodbinc				MongoDB	3		https://mongodb.com	Information Technology
+https://www.linkedin.com/company/international-paper				International Paper	1		https://internationalpaper.com	Manufacturing
+https://www.linkedin.com/company/yale-school-of-music				Yale School of Music	2		https://yale.edu	Education
+https://www.linkedin.com/company/larkin-refractory-solutions				Larkin Refractory Solutions	4		https://larkinrefractory.com	Manufacturing
+https://www.linkedin.com/in/hailsw	Hailey	Wilcox	Venture Capital Investor	battery ventures	1	hwilcox@battery.com	http://www.battery.com	Finance and Banking
+https://www.linkedin.com/in/julian-gonzalez-46198b3	Julian	Gonzalez	Instructor	st. patrick - st. vincent high school	1	j.gonzalez@spsv.org	https://target.com
+https://www.linkedin.com/company/asia-pacific-public-electronic-procurement-network				Asia Pacific Public Electronic Procurement Network	1		https://adb.org	Government and Public Administration
+https://www.linkedin.com/company/hilton-tashkent-city-hotel				Hilton Tashkent City Hotel	5		https://hilton.com	Tourism and Hospitality
+https://www.linkedin.com/company/accenture-united-states-benefit				ACCENTURE UNITED STATES BENEFIT	1		https://accenture.com	Information Technology
+https://www.linkedin.com/company/evergreen-valley-college				Evergreen Valley College	2		https://evc.edu	Education
+https://www.linkedin.com/company/washington-university-department-of-surgery-human-resources				Washington University School of Medicine-Department of Surgery-Human Resources	2		https://wustl.edu	Health and Pharmaceuticals
+https://www.linkedin.com/company/abbaspourrad-lab				Abbaspourrad Lab	2		https://cornell.edu	Professional and Business Services
+https://www.linkedin.com/company/my-eye-dr.-optometry-greenbelt-llc					1	junzhuzhang20@163.com	https://myeyedr.com	
+https://www.linkedin.com/in/jessiecaruso	Jessie	Caruso (she/her)	Chief Mom Officer	the caruso clan	4	jcaruso@perkinscoie.com		
+https://www.linkedin.com/company/jewish-council-for-the-aging				Jewish Council for the Aging (JCA)	2		https://accessjca.org	Non-Profit and Social Services
+https://www.linkedin.com/company/pilates-power				Pilates Power	1		https://powerpilates.com	Professional and Business Services
+https://www.linkedin.com/in/tommy-ho-cpa-233bb21a	Tommy	Ho	Senior Accountant	Veracode	3	tommyhocm@hotmail.com	https://veracode.com	Accounting
+https://www.linkedin.com/company/copper-state-bolt-nut-company				Copper State Bolt & Nut Company	1		https://copperstate.com	Manufacturing
+https://www.linkedin.com/company/georgetown-university-writing-center				Georgetown University Writing Center	1		https://georgetown.edu	Creative Arts and Entertainment
+https://www.linkedin.com/in/rothman-robin-rothman-66bb6026	Rothman, Robin	Rothman	Senior Global Real Estate Advisor, Associate Broker	sotheby's international realty	6	robin.rothman@sothebyshomes.com	http://www.sothebysrealty.com	Real Estate
+
+
+
 Try and be extra lenient with big companies, as they are more likely to be qualified.
+
 """
     
     headers = {
@@ -467,7 +576,7 @@ if page == "Upload CSV & Analyze":
         # Show CSV preview, then row selection and config
         if 'df' in locals():
             st.subheader("👀 CSV Preview")
-            st.dataframe(df.head(50), use_container_width=True)
+            st.dataframe(df.head(10), use_container_width=True)
 
             st.subheader("🎯 Select Rows to Process")
             col1, col2 = st.columns(2)
