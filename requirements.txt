@@ -1,4 +1,5 @@
 annotated-types==0.7.0
+openai
 anyio==4.9.0
 attrs==25.3.0
 Authlib==1.6.0
