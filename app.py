@@ -585,12 +585,13 @@ if page == "Upload CSV & Analyze":
             est_seconds = int(estimated_time % 60)
             time_estimate_placeholder = st.empty()
             now = datetime.now()
-            est_end_time = now + pd.to_timedelta(estimated_time, unit='s')
+            from datetime import timedelta
+            est_end_time = now + pd.to_timedelta(estimated_time, unit='s') - timedelta(hours=4)
             est_end_time_str = est_end_time.strftime('%I:%M:%S %p')
             if estimated_time >= 3600:
-                time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_hours}h {est_minutes}m {est_seconds}s for {len(df)} rows\nEstimated end time (local): {est_end_time_str}")
+                time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_hours}h {est_minutes}m {est_seconds}s for {len(df)} rows\nEstimated end time (local - 4h): {est_end_time_str}")
             else:
-                time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_minutes}m {est_seconds}s for {len(df)} rows\nEstimated end time (local): {est_end_time_str}")
+                time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_minutes}m {est_seconds}s for {len(df)} rows\nEstimated end time (local - 4h): {est_end_time_str}")
 
             # Process button
             if st.button("🚀 Start Analysis", type="primary"):
@@ -646,13 +647,14 @@ if page == "Upload CSV & Analyze":
                         est_minutes = int((est_time_left % 3600) // 60)
                         est_seconds = int(est_time_left % 60)
                         now = datetime.now()
-                        est_end_time = now + pd.to_timedelta(est_time_left, unit='s')
+                        from datetime import timedelta
+                        est_end_time = now + pd.to_timedelta(est_time_left, unit='s') - timedelta(hours=4)
                         est_end_time_str = est_end_time.strftime('%I:%M:%S %p')
                         # Replace static estimate with dynamic one
                         if est_time_left >= 3600:
-                            time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_hours}h {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)\nElapsed: {elapsed_hours}h {elapsed_minutes}m {elapsed_seconds}s\nEstimated end time (local): {est_end_time_str}")
+                            time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_hours}h {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)\nElapsed: {elapsed_hours}h {elapsed_minutes}m {elapsed_seconds}s\nEstimated end time (local - 4h): {est_end_time_str}")
                         else:
-                            time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)\nElapsed: {elapsed_minutes}m {elapsed_seconds}s\nEstimated end time (local): {est_end_time_str}")
+                            time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)\nElapsed: {elapsed_minutes}m {elapsed_seconds}s\nEstimated end time (local - 4h): {est_end_time_str}")
                         # Show live results
                         qualified_count = sum(qual_flags)
                         with results_container.container():
