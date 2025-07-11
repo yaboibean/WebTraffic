@@ -395,14 +395,6 @@ init_database()
 # Sidebar navigation
 debug_log = []
 show_debug = st.sidebar.checkbox("Show Debug Log", value=False)
-    if show_debug:
-        debug_log.append(f"Saving analysis results for {filename} with {len(df)} rows.")
-    if show_debug:
-        debug_log.append("Retrieving past analyses from database.")
-    if show_debug:
-        debug_log.append(f"Getting qualified visitors for analysis_id={analysis_id}.")
-    if show_debug:
-        debug_log.append(f"Qualifying visitor {row.get('FirstName', '')} {row.get('LastName', '')} at {row.get('CompanyName', '')} [{current_idx+1}/{total_count}]")
 st.sidebar.title("🚀 InstaLILY Lead Qualification")
 page = st.sidebar.selectbox("Choose Action", ["Upload CSV & Analyze", "View Past Results"])
 
