@@ -550,8 +550,11 @@ if page == "Upload CSV & Analyze":
 
         # Show CSV preview, then row selection and config
         if 'df' in locals():
-            st.subheader("👀 CSV Preview")
-            st.dataframe(df.head(10), use_container_width=True)
+            st.subheader("CSV Preview")
+            # Show preview with row numbers starting from 2 (but do not skip any data)
+            preview_df = df.head(10).copy()
+            preview_df.index = preview_df.index + 2
+            st.dataframe(preview_df, use_container_width=True)
 
             st.subheader("🎯 Select Rows to Process")
             col1, col2 = st.columns(2)
@@ -560,7 +563,7 @@ if page == "Upload CSV & Analyze":
             if not process_all:
                 with col2:
                     # Show spreadsheet-style row numbers (starting from 1)
-                    row_numbers = list(range(1, len(df) + 1))
+                    row_numbers = list(range(1, len(df) + 2))
                     selected_rows = st.multiselect(
                         "Select specific rows (spreadsheet row number, starting from 1)",
                         options=row_numbers,
@@ -576,15 +579,18 @@ if page == "Upload CSV & Analyze":
             with col2:
                 batch_size = st.selectbox("Batch size (for large datasets)", [1, 5, 10, 25, 50], index=2)
 
-            estimated_time = len(df) * 10.1  # seconds (initial guess)
+            estimated_time = len(df) * 9.8  # seconds (initial guess)
             est_hours = int(estimated_time // 3600)
             est_minutes = int((estimated_time % 3600) // 60)
             est_seconds = int(estimated_time % 60)
             time_estimate_placeholder = st.empty()
+            now = datetime.now()
+            est_end_time = now + pd.to_timedelta(estimated_time, unit='s')
+            est_end_time_str = est_end_time.strftime('%I:%M:%S %p')
             if estimated_time >= 3600:
-                time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_hours}h {est_minutes}m {est_seconds}s for {len(df)} rows")
+                time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_hours}h {est_minutes}m {est_seconds}s for {len(df)} rows\nEstimated end time: {est_end_time_str}")
             else:
-                time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_minutes}m {est_seconds}s for {len(df)} rows")
+                time_estimate_placeholder.info(f"⏱️ Estimated processing time: {est_minutes}m {est_seconds}s for {len(df)} rows\nEstimated end time: {est_end_time_str}")
 
             # Process button
             if st.button("🚀 Start Analysis", type="primary"):
@@ -624,14 +630,21 @@ if page == "Upload CSV & Analyze":
                         avg_time = sum(row_times) / len(row_times)
                         rows_left = len(df) - (idx + 1)
                         est_time_left = avg_time * rows_left
+                        elapsed_time = time.time() - start_time
+                        elapsed_hours = int(elapsed_time // 3600)
+                        elapsed_minutes = int((elapsed_time % 3600) // 60)
+                        elapsed_seconds = int(elapsed_time % 60)
                         est_hours = int(est_time_left // 3600)
                         est_minutes = int((est_time_left % 3600) // 60)
                         est_seconds = int(est_time_left % 60)
+                        now = datetime.now()
+                        est_end_time = now + pd.to_timedelta(est_time_left, unit='s')
+                        est_end_time_str = est_end_time.strftime('%I:%M:%S %p')
                         # Replace static estimate with dynamic one
                         if est_time_left >= 3600:
-                            time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_hours}h {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)")
+                            time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_hours}h {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)\nElapsed: {elapsed_hours}h {elapsed_minutes}m {elapsed_seconds}s\nEstimated end time: {est_end_time_str}")
                         else:
-                            time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)")
+                            time_estimate_placeholder.info(f"⏱️ Estimated time remaining: {est_minutes}m {est_seconds}s (avg {int(round(avg_time))}s/row, {rows_left} left)\nElapsed: {elapsed_minutes}m {elapsed_seconds}s\nEstimated end time: {est_end_time_str}")
                         # Show live results
                         qualified_count = sum(qual_flags)
                         with results_container.container():
