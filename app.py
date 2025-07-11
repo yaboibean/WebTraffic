@@ -13,6 +13,9 @@ import threading
 from contextlib import contextmanager
 import io
 from io import StringIO
+from dotenv import load_dotenv
+
+load_dotenv()
 
 ###########################
 # Print Capture Utilities #
@@ -50,9 +53,9 @@ st.set_page_config(
 )
 
 # Constants
-PERPLEXITY_API_KEY = st.secrets.get("PERPLEXITY_API_KEY", "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")
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
 PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Database setup
 def init_database():
@@ -460,8 +463,12 @@ if page == "Upload CSV & Analyze":
         # Save print log to session state
         st.session_state['print_log_buffer'].write(print_buffer.getvalue())
 
-        # Show only row selection and config (no preview)
+
+        # Show CSV preview, then row selection and config
         if 'df' in locals():
+            st.subheader("👀 CSV Preview")
+            st.dataframe(df.head(50), use_container_width=True)
+
             st.subheader("🎯 Select Rows to Process")
             col1, col2 = st.columns(2)
             with col1:
