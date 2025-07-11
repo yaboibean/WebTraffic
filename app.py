@@ -551,9 +551,9 @@ if page == "Upload CSV & Analyze":
         # Show CSV preview, then row selection and config
         if 'df' in locals():
             st.subheader("CSV Preview")
-            # Show preview with row numbers starting from 1 (spreadsheet style, matches selection)
+            # Show preview with row numbers starting from 2 (spreadsheet style: header=1, first data row=2)
             preview_df = df.head(10).copy()
-            preview_df.index = preview_df.index + 1
+            preview_df.index = preview_df.index + 2
             st.dataframe(preview_df, use_container_width=True)
 
             st.subheader("🎯 Select Rows to Process")
@@ -562,15 +562,15 @@ if page == "Upload CSV & Analyze":
                 process_all = st.checkbox("Process all rows", value=True)
             if not process_all:
                 with col2:
-                    # Show spreadsheet-style row numbers (starting from 1)
-                    row_numbers = list(range(1, len(df) + 1))
+                    # Show spreadsheet-style row numbers (starting from 2)
+                    row_numbers = list(range(2, len(df) + 2))
                     selected_rows = st.multiselect(
-                        "Select specific rows (spreadsheet row number, starting from 1)",
+                        "Select specific rows (spreadsheet row number, starting from 2)",
                         options=row_numbers,
                         default=row_numbers[:min(10, len(df))]
                     )
                     # Use only valid selected rows (ignore any out of range)
-                    selected_indices = [i - 1 for i in selected_rows if 1 <= i <= len(df)]
+                    selected_indices = [i - 2 for i in selected_rows if 2 <= i <= len(df) + 1]
                     df = df.iloc[selected_indices].reset_index(drop=True)
 
             st.subheader("⚙️ Configuration")
