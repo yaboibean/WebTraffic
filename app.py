@@ -526,20 +526,32 @@ if page == "Upload CSV & Analyze":
     st.title("📊 Lead Qualification Analysis")
     st.markdown("Upload a CSV file with visitor data to qualify leads using AI-powered analysis.")
     
-    # Inject custom CSS to make file uploader drop area match Mac aspect ratio (16:10)
+    # Inject custom CSS to force file uploader drop zone to true aspect ratio and centering
     st.markdown("""
         <style>
-        [data-testid="stFileUploadDropzone"] {
-            min-height: 350px;
-            height: 350px;
-            max-width: 560px;
-            width: 560px;
-            margin: 0 auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 18px;
+        /* Center the uploader container */
+        [data-testid="stFileUploadContainer"] {
+            display: flex !important;
+            justify-content: center !important;
         }
+        /* Force drop zone to aspect ratio and prevent stretching */
+        [data-testid="stFileUploadDropzone"] {
+            width: 560px !important;
+            height: 350px !important;
+            min-width: 560px !important;
+            min-height: 350px !important;
+            max-width: 560px !important;
+            max-height: 350px !important;
+            margin: 0 auto !important;
+            border-radius: 18px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            flex-direction: column !important;
+            flex-shrink: 0 !important;
+            flex-grow: 0 !important;
+        }
+        /* Center the label above the uploader */
         [data-testid="stFileUploadLabel"] {
             text-align: center;
             display: block;
