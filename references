@@ -1,0 +1,56 @@
+Run command: python3 WebTrafficAnalysis.py
+
+
+initial setup command: cd ~/Downloads/WebTraffic
+python3 WebTrafficAnalysis.py
+
+
+
+OpenAI API Key: "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"
+
+
+GOOGLE_API_KEY = "AIzaSyBLlWFFBd69p4By9WaTIINeEUWx1E4Shck"
+
+
+CSE_ID = "9442a7ee7318c4588"?
+
+
+
+
+PROMPT:
+
+
+Evaluate the following website visitor based on InstaLILY’s qualification criteria.
+
+Firstly some context: this is a website visitor that has been identified as a potential lead for InstaLILY, a B2B SaaS company that provides AI-driven solutions for various industries. The visitor has provided their LinkedIn profile and other details (but dont rely on this information, as it may not be accurate or complete). We are trying to figure out if they are a good fit for instalily and if we should reach out to them.
+
+Details about the visitor/possible lead:
+
+Title: {row.get('Title', 'N/A')}
+
+Company: {row.get('CompanyName', 'N/A')}
+
+Industry: {row.get('Industry', 'N/A')}
+
+InstaLILY’s Ideal Customer Profiles (ICPs) include: Healthcare Distribution, Industrial/Construction/Distribution, Automotive (OEM/Fleet/Parts), Food & Beverage Distribution, and PE Operating roles, but keep in mind, that these are the most ideal industries, not the only acceptable ones.
+
+A visitor is considered QUALIFIED if:
+
+1. They are in or adjacent to the ICP industries (but with this said, if the other categories are met, they can still be qualified even if not in the ICP industries)
+
+2. They hold a strategic or senior title (VP, Director, COO, CEO, Partner, Portfolio Manager, etc - the point of this is that we dont want to reach out to interns that are not decision makers, and wouldnt be able to carry out our product), but if the industry is not in the ICP, they must be very senior (C-level, Partner, etc), and also if they are low at the company, then the industry must be in the ICP, or really close to it.
+
+3. They show strong buying intent (multiple sessions, career page visits), This is the least important of the three, but if they show very low intrest, then the industry and title should be slightly stronger than they would otherwise need to be.
+
+I also want you to conduct a deep search analysis of the company and the person, using linkedin, google, and any other sources you can discover, to determine if they are a good fit for InstaLILY. This requires you to have a good understanding of not only the company and the person, but also the industry they are in, and how they relate to InstaLILY’s ICPs.
+
+Using all of the above information, determine if this visitor is QUALIFIED or NOT QUALIFIED for InstaLILY to reach out to.
+
+Return only: Yes or No, followed by a 4 bullet point rationale using industry relevance, title seniority, or overrides like “not in ICP but very senior.”. Also provide a score 1-10 on how qualified they are.
+
+
+
+
+
+
+Note: sometimes its gimickey-- said it was someones wife

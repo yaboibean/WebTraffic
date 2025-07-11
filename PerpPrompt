@@ -1,0 +1,127 @@
+
+Evaluate the following website visitor to determine if instalily should reach out to them as a potantial client.
+
+    Firstly some context: this is a website visitor that has been identified as a potential lead for InstaLILY, a B2B SaaS company that provides AI-driven solutions for various industries. We are trying to figure out if they are a good fit for InstaLILY and if we should reach out to them.
+
+    Be aware of the intent of the visitor, and put it into 3 categories: Investor, student/looking for a job, or potential customer. If they are an investor or student, they are not qualified. If they are a potential customer, we will evaluate them based on the following criteria.
+
+    Visitor Details:
+    - Title: {row.get('Title', 'N/A')}
+    - First Name: {row.get('FirstName', 'N/A')}
+    - Last Name: {row.get('LastName', 'N/A')}
+    - LinkedIn URL: {row.get('LinkedInUrl', 'N/A')}
+    - Email: {row.get('Email', 'N/A')}
+    - Company: {row.get('CompanyName', 'N/A')}
+    - Industry: {row.get('Industry', 'N/A')}
+    - Website: {row.get('Website', 'N/A')}
+    - Country: {row.get('Country', 'N/A')}
+
+
+    Some of InstaLILY's Ideal Customer Profiles (ICPs) include: Healthcare Distribution, Industrial/Construction/Distribution, Automotive (OEM/Fleet/Parts), Food & Beverage Distribution, and PE Operating roles. These are ideals, not requirements. These are just the top industries we are targeting, but we are more than open to other industries if the visitor meets the other criteria. Dont place too much negative weight on the industry, and place a lot of positive weight on the title and seniority (meaning if they are a VP, Director, or similar role, that has a good amount of positive impact on the decision). this means that if the industry does not line up, don't doc too many points, but if it does line up, give a lot of points.
+
+    In the case of ambiguous or missing data, search online to fill in the gaps. Use the companies website, and any other sources you can find to get a better understanding of the company and the visitor.
+    InstaLILY's business model is to provide AI-driven solutions that help businesses in these industries optimize their operations, improve efficiency, and drive growth. We are looking for visitors who have an interest in leveraging AI technology to enhance their business processes.
+
+Also keep in mind that some of the information given could be wrong, so you need to do your own research to verify it, but if you find that for example the industry is wrong, but the title is right, you will need to restart the evaluation based on the new information you found.
+    
+While you are evaluating the visitor/company, do a deep search for any news on both the company and the visitor. Look for any recent news, press releases, or social media activity that might indicate their current business focus, challenges, or interests. This will help you better understand their potential fit with InstaLILY. Feel free to use any sources you can find, including, Google, news articles, etc. and any other sources you can find. If you cannot find any information, do not qualify them. Reddit is also a great source for finding information about the company and the visitor, so be sure to check there as well.
+
+    When you are researching you must search the following: 
+
+        [company name] + [industry] + "news" to find any recent news about the company
+        what does [company name] do? to find the company's website and any other information you can find.
+        [first name] + [last name] + [company name] to find the visitor's LinkedIn profile.
+        [company name] + [industry] to find the company's website and any other information you can find.
+
+
+    A visitor is considered QUALIFIED if:
+    1. They are in or adjacent to ICP industries (if other categories are met, even non-ICP may qualify).
+    2. They hold a senior/strategic title (VP, Director, COO, CEO, Partner, etc). Lower-level roles are OK only if strongly ICP-aligned.
+    3. They show strong buying intent (multiple sessions, career page visits). This is the least important of the three.
+
+    Conduct deep analysis to judge company/role fit. Take your time to evaluate the company using all available sources, and do not rush this process. 
+
+    If a company does something remotely similar to what InstaLILY does, they are a competitor, and they are not qualified, and this immediately disqualifies them. And also keep in mind that they might not be targeting the same industries as instalily, but if they have a similar mission of modernizing other companies (B2B), they are a competitor.
+
+    Return only:
+    - Yes or No
+    - Many short bullet points with information based on industry, title, seniority, and any override logic
+    - A short summary of the visitor's profile
+    - A short summary of the company
+    - A score 1–10 of how qualified they are
+
+
+    While you are completeing this, something that you should be thingking as you evaluate each company, is 'would this company benifit from Instalily's services?' Keep in mind, instalily helps companies modernize their operations, and improve their efficiency.
+
+    When there are a lack of details for name, title or company, refer to the LinkedIn URL provided in the CSV. If the LinkedIn URL is not available, you can search for the visitor's name and company online to find their LinkedIn profile or other relevant information.
+    
+    Another thing you NEED to watch out for is whether the visitor is a competitor, trying to scope out InstaLILY. In order to know if they are a competitor, you need to conduct a deep search about the company online and use as many sources you can find. This also requires you to do some research, but it is very important. If they are a competitor, they are not qualified, and you should say so in your response. This means you also have to have a deep understanding of InstaLILY's business model, and products.
+
+    Be sure that you understand both InstaLILY's business model and ICPs, as well as the visitor's profile. If you are not sure, do not qualify them. Make sure that they would be a good fit for InstaLILY, and that they are not a competitor. If you are not sure, do not qualify them.
+
+    Go to their linkedin profile(using the link given) and look at their current job (the title/company given can sometime be wrong. If the two are different, even slightly, trust linkedin over anything)
+
+    Keep in mind, the more people we can qualify, the better, but if they are not a good fit, we should not waste time on them. Be very thorough in your analysis.
+
+    You should aim to qualify between 25 and 35% of the visitors.
+
+The following were all qualified visitors, so you can use them as examples of what a qualified visitor looks like. Study them very carefully and make sure you understand what makes each of them qualified. When in doubt, you can refer back to these examples to help you make your decision.
+LinkedIn	First Name	Last Name	Role	Company
+https://www.linkedin.com/in/colliersearle	Collier	Searle	Board Member	ORTEC
+https://www.linkedin.com/in/erin-fischell-6562303a	Erin	Fischell	Founder	Acbotics Research llc
+https://www.linkedin.com/in/peter-higgins-516a3133	Peter	Higgins	Chief Operating Officer	Salt Lake City Department of Airports
+https://www.linkedin.com/in/aolar	Amanda	Hazer	Senior Director of Operations	Thyme Care
+https://www.linkedin.com/in/michael-dorfman	Michael	Dorfman	CEO	Pro Padel League
+https://www.linkedin.com/in/emmanuelebwe	Emmanuel	Ebwe	Geo-Engineering / Operations Manager	Rohadfox Construction Control Services
+https://www.linkedin.com/in/rahulkaitheri	Rahul	Kaitheri	Senior Director, IT Marketing Technology	Lowe's Companies, inc.
+https://www.linkedin.com/in/john-desena	John	DeSena	Co-Chief Operating Officer, Shared Services	B. Riley Financial
+https://www.linkedin.com/in/jeff-stuart-b8899611	Jeff	Stuart	Managing Director	Berkadia
+https://www.linkedin.com/in/terry-grossenbacher-5b7950b	Terry	Grossenbacher	Sales Agent	Valued Merchant Services
+https://www.linkedin.com/in/phillippoinsatte	Phillip	Poinsatte	President / Owner	global recruiters of boston south (grn)
+https://www.linkedin.com/in/paul-donahue-a3048166	Paul	Donahue	Vice President	salem capital management
+https://www.linkedin.com/in/thomas-minetti-414a449	Thomas	Minetti	Owner	Handyman Ashburn
+https://www.linkedin.com/in/davidyoh2	David	Yoh	Emerging Markets Account Executive	toast
+https://www.linkedin.com/in/theresa-cullinan-caulfield-27886955	Theresa	Cullinan Caulfield	Senior Director Human Resources	prager & company
+https://www.linkedin.com/in/jon-glascoe-60512551	jon	glascoe	Co-Founder	cypress films
+https://www.linkedin.com/in/lissette-gonzalez-83253b54	lissette	Gonzalez	Principle Administrator	city of new york, department of homeless services
+https://www.linkedin.com/in/kasey-homa	Kasey	Homa	Global Product Strategy & Development	Capital Group
+https://www.linkedin.com/in/robert-mahoney-17ba223	Robert	Mahoney	Founder	Has founded a variety of interesting companies.
+https://www.linkedin.com/in/ryanstone-nyc	Ryan	Stone	Neurology Account Specialist	teva pharmaceuticals
+https://www.linkedin.com/in/jennifer-whitaker-41394bb7	Jennifer	Whitaker	Director of Engineering and Maintenance	rivanna water and sewer authority
+https://www.linkedin.com/in/laiyzhang	Teri	Zhang	Associate Media Director	zenith
+https://www.linkedin.com/in/caley-kovler	Caley	Kovler	Director, Consumer Insights	starz
+https://www.linkedin.com/in/karina-iturralde	Karina	Iturralde	Public Relations Assistant Account Executive	inkhouse
+https://www.linkedin.com/in/keri-lartz	Keri	Lartz	Director Of Operations	the rave agency
+https://www.linkedin.com/in/marissazehnder	Marissa	Zehnder	National Account Executive	justworks
+https://www.linkedin.com/in/nhansch	Neal	Hansch	CEO, Managing Partner	Silicon Foundry
+https://www.linkedin.com/in/bretthughes6	Brett	Hughes	Chief Operating Officer	studionow
+https://www.linkedin.com/in/muthukumar-easwaran-8081863	Muthukumar	Easwaran	Senior Vice President -  Digital/Data, Product and Technology Platforms	neighborly®
+https://www.linkedin.com/in/ronald-volans	Ron	Volans	Head of North America Janssen Deliver	Johnson & Johnson
+https://www.linkedin.com/in/shannon-moman-a1261216	Shannon	Moman	Director of Sales Support	r & s northeast
+https://www.linkedin.com/in/chad-goldman-57905a31/	Chad	Goldman	Manager, Direct Container Division at Jofran, Inc.	
+https://www.linkedin.com/in/joby-peter-08833a4	Joby	Peter	Engineering Manager	amd
+https://www.linkedin.com/in/saroj-adhikari-1aa99020	Saroj	Adhikari	Leader, Data Engineering Team	success academy charter schools
+https://www.linkedin.com/in/nil-timor	Nil	Timor	Senior Manager, Product Analytics	jwp connatix
+https://www.linkedin.com/in/sjyork	Sarah	York	Director, Stores & Corporate Marketing Strategy	Macy's
+https://www.linkedin.com/in/anju-jain-0374207a	Anju	Jain	High Touch Operations Manager	Cisco
+https://www.linkedin.com/in/ronak-doshi-everestgroup	Ronak	Doshi	Partner	everest group
+https://www.linkedin.com/in/sarab-atwal	Sarab	Atwal (CFA)	Head, Specialty Gift Cards, Amazon Payment Products, North America	amazon
+https://www.linkedin.com/in/jim-mcgibbon-021523	Jim	McGibbon	Managing Partner	partners in mission
+https://www.linkedin.com/in/thomas-knight-1a563915	Thomas	Knight	Owner	toyon associates, inc
+https://www.linkedin.com/in/jasontell	Jason	Tell	Chief User Experience Officer	Modern Climate
+https://www.linkedin.com/in/don-macagba	Don King	Macagba	Site Manager	arx networks
+https://www.linkedin.com/in/amitmenghani	Amit	Menghani	Director of Software Engineering	capital one
+https://www.linkedin.com/in/hsuelaine	Elaine	Hsu	Head Of Operations	planet fwd
+https://www.linkedin.com/in/jim-mackinnon-aa35032a	Jim	MacKinnon	Director International Sales	yaskawa america, inc. -  drives & motion division
+https://www.linkedin.com/in/emilio-mel-smith-b2636749	Emilio Mel	Smith	Assistant Superintendent, Commercial Tennant Improvement Construction	novo construction, inc.
+https://www.linkedin.com/in/raghava-sreenivasan-183b9b295	Raghava	Sreenivasan	Vice President - Site Reliability Engineer/DevOps Lead	JPMorgan Chase & Co.
+
+
+
+
+
+
+
+Finally, Only if the person qualifies, write a short, casual, personal email from Sumo (co-founder of InstaLILY) to this visitor, based on their role and company. 
+Keep it informal and friendly. No buzzwords. Mention curiosity about what brought them to the site, and a soft offer to help. 
+Mention how InstaLILY helps companies eliminate manual work and improve operations with AI.

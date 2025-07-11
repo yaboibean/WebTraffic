@@ -1,0 +1,5 @@
+.env
+qualification_results.db
+__pycache__/
+*.pyc
+.DS_Store
